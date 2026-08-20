@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "method": "POST",
+  "url": "https://merchant.example/v1/order",
+  "contentType": "application/json",
+  "bodyBase64": "eyJvcmRlcklkIjoib3JkZXJfMTIzIn0=",
+  "paymentRequired": "REPLACE_WITH_CANONICAL_PAYMENT_REQUIRED",
+  "challengeDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "merchantReference": "order_123"
+}

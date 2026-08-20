@@ -1,0 +1,4 @@
+interface:
+  display_name: "x402api Pay"
+  short_description: "Use local wallets for exact x402 agent payments"
+  default_prompt: "Use $x402api-pay to create or use a local wallet and complete this x402 payment safely."

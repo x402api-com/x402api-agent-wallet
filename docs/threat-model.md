@@ -1,0 +1,54 @@
+# Agent wallet threat model
+
+## Assets
+
+- network-specific private keys and encrypted backups;
+- keystore passphrases and password files;
+- exact signed transactions and `PAYMENT-SIGNATURE` artifacts;
+- merchant credentials and exact request bytes;
+- durable attempt state and release artifacts.
+
+## Trust boundaries
+
+- The owner chooses a dedicated wallet balance as the maximum economic
+  exposure.
+- The local host and any process allowed to invoke an unlocked CLI are trusted
+  to spend that balance.
+- Merchant responses, x402 challenges, RPC responses, skill prompts, and
+  request-envelope files are untrusted.
+- Refill notification requests are wallet-signed, but email recipients, tenant
+  names, and product labels are trusted only when loaded from verified x402api
+  subscription records.
+- x402api hosted services never receive private keys or unlock material.
+
+## Required controls
+
+- Separate keys and addresses for Base, Solana, and TRON.
+- AES-256-GCM encrypted keystores with scrypt-derived keys and authenticated
+  metadata.
+- Owner-only directories and files; reject symlinks and unsafe permissions.
+- Exact request, resource, asset, network, profile, amount, recipient, and
+  challenge validation before signing.
+- One durable artifact per request digest; ambiguous outcomes reuse it.
+- Never print secret keys or complete payment signatures in normal output.
+- Explicit RPC endpoints and no network or asset fallback.
+- Release provenance, dependency review, checksums, and private vulnerability
+  reporting.
+- Short-lived refill intent signatures bound to the exact endpoint audience;
+  server-side subscription matching, deduplication, and rate limits.
+
+## Residual risks
+
+- A compromised or malicious host can use an unlocked wallet.
+- An owner can fund the wrong network or unsupported asset.
+- RPC providers can censor, delay, or lie; a single provider is not finality.
+- Lost passphrases or backups can permanently strand funds.
+- Mainnet fee estimation and chain behavior can change after release.
+- A compromised wallet can request nuisance refill emails; hosted delivery
+  must rate limit and deduplicate without accepting arbitrary recipients.
+
+## Out of scope for V1
+
+Hosted custody, MPC, hardware wallets, smart-account delegation, automatic gas
+or resource acquisition, replenishment, swaps, bridges, trading, arbitrary
+signing, and protection from a hostile host.

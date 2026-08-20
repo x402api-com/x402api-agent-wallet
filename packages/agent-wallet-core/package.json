@@ -1,0 +1,35 @@
+{
+  "name": "@x402api/agent-wallet-core",
+  "version": "0.1.0",
+  "description": "Persistent encrypted agent wallets and exact x402 payment authorization.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "ethers": "6.17.0",
+    "tronweb": "6.0.2",
+    "tweetnacl": "1.0.3"
+  }
+}
