@@ -75,8 +75,13 @@ does not include the full signature.
 - `wallet_storage_unsafe`, `payment_artifact_corrupt`: stop and escalate.
 - `insufficient_asset_balance`: show exact funding instructions or request a
   registered refill notification.
-- `insufficient_network_fee_resources`: request only the network's native fee
-  asset/resource; do not swap automatically.
+- `insufficient_network_fee_resources`: applies only to buyer-funded profiles;
+  request the network's native fee asset/resource and do not swap automatically.
+- `gas_treasury_below_floor`, `tenant_gas_credit_insufficient`,
+  `sponsorship_reservation_expired`: the sponsored rail is temporarily not
+  admissible; do not switch to buyer-funded gas.
+- `sponsored_payload_invalid`, `sponsor_signature_unavailable`: stop and retain
+  the attempt for safe retry or operator review.
 - `unsupported_network`, `unsupported_asset`, `unsupported_profile`,
   `request_binding_mismatch`: stop; never fall back.
 - `attempt_already_exists`, `attempt_ambiguous`: reuse and reconcile the named

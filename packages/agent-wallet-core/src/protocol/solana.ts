@@ -22,6 +22,8 @@ export const SOLANA_MEMO_PROGRAM =
   "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 export const SOLANA_USDT_BUYER_FUNDED_PROFILE =
   "com.k1hub.x402.solana-buyer-funded.v1";
+export const SOLANA_SPONSORED_PROFILE =
+  "com.x402api.x402.solana-sponsored.v1";
 
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const BASE58_INDEX = new Map(
@@ -329,14 +331,15 @@ function validateSponsoredRequirement(accepted: PaymentRequirement): void {
   if (
     accepted.scheme !== "exact" ||
     accepted.network !== SOLANA_MAINNET_NETWORK ||
-    accepted.asset !== SOLANA_USDT_MAINNET_MINT ||
+    !SOLANA_ISSUER_NATIVE_STABLECOIN_MINTS.has(accepted.asset) ||
     !DECIMAL.test(accepted.amount) ||
     accepted.amount === "0" ||
     typeof accepted.extra.feePayer !== "string" ||
+    accepted.extra.payloadProfile !== SOLANA_SPONSORED_PROFILE ||
     typeof accepted.extra.memo !== "string" ||
     !MEMO.test(accepted.extra.memo)
   ) {
-    throw new Error("requirement is not native Solana USDt exact");
+    throw new Error("requirement is not sponsored native Solana USDC or USDT exact");
   }
   decodeSolanaBase58(accepted.asset);
   decodeSolanaBase58(accepted.payTo);
@@ -700,6 +703,41 @@ export const createSolanaUsdcPayment = createSolanaPayment;
 export const createSolanaUsdtPayment = createSolanaPayment;
 export const createBuyerFundedSolanaPayment = createSolanaPayment;
 export const createBuyerFundedSolanaUsdtPayment = createSolanaPayment;
+
+/** Create a sponsored Solana USDC/USDT payload where the buyer needs no SOL. */
+export async function createSponsoredSolanaPayment(options: {
+  rpc: SolanaRpc;
+  wallet: SolanaWalletTransport;
+  paymentRequired: PaymentRequired;
+  accepted: PaymentRequirement;
+  buyerPaymentIdentifier: string;
+}): Promise<PaymentPayload> {
+  const { accepted, paymentRequired } = options;
+  validateSponsoredRequirement(accepted);
+  await verifyExternalRecipientDeclaration({ paymentRequired, accepted });
+  const payer = await options.wallet.connect(SOLANA_MAINNET_NETWORK);
+  const { message, transaction } = await buildSolanaUsdtTransaction({
+    accepted,
+    payer,
+    recentBlockhash: await options.rpc.latestBlockhash(),
+  });
+  const signed = fromBase64(
+    await options.wallet.signTransaction({
+      network: SOLANA_MAINNET_NETWORK,
+      transactionBase64: toBase64(transaction),
+    }),
+  );
+  verifySponsoredWalletTransaction({ unsigned: transaction, signed, message });
+  return createPaymentPayload({
+    paymentRequired,
+    accepted,
+    paymentIdentifier: options.buyerPaymentIdentifier,
+    schemePayload: { transaction: toBase64(signed) },
+  });
+}
+
+export const createSponsoredSolanaUsdcPayment = createSponsoredSolanaPayment;
+export const createSponsoredSolanaUsdtPayment = createSponsoredSolanaPayment;
 
 export type SponsoredSolanaPaymentLabAdmission = {
   kind: "tenant-sponsored-solana-payment-lab-v1";

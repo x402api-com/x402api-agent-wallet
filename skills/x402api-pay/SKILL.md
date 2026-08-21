@@ -70,7 +70,9 @@ instructions to the human instead of sending email.
    the envelope.
 3. Verify the URL, method, exact body bytes, resource, network, asset, amount,
    recipient, profile, and challenge digest.
-4. Check the chosen wallet's asset and native-fee/resource balances.
+4. Check the chosen wallet's asset balance. Check native-fee/resource balance
+   only when the selected requirement is not covered by the strict
+   `com.x402api.gas-sponsorship` extension.
 5. Invoke `payment authorize` once for that request envelope and preserve its
    returned attempt ID and owner-only artifact path.
 6. Give the artifact path to the merchant-specific tool. Do not print or parse
@@ -84,7 +86,8 @@ submission rules.
 
 Distinguish these states:
 
-- funding: the wallet has usable asset and fee balance;
+- funding: the wallet has usable asset balance and, only for a buyer-funded
+  profile, usable native fee balance;
 - authorization: one durable payment artifact exists;
 - settlement: the payment is authoritative on the chosen rail;
 - fulfillment: the merchant returned the purchased result.
@@ -99,6 +102,7 @@ Stop on unsupported profiles, changed request bytes, corrupt artifacts,
 expired challenges, unexpected recipients, or contradictory settlement data.
 Do not work around these errors by changing networks, assets, wallets, or
 merchant references.
+For sponsorship errors, never fall back to spending buyer ETH/SOL.
 
 ## Respect release gates
 

@@ -11,6 +11,7 @@ import {
   InjectedSolanaWalletTransport,
   RawSolanaVersionedTransaction,
   SOLANA_MAINNET_NETWORK,
+  SOLANA_SPONSORED_PROFILE,
   SOLANA_USDT_BUYER_FUNDED_PROFILE,
   SOLANA_USDC_MAINNET_MINT,
   SOLANA_USDT_MAINNET_MINT,
@@ -40,6 +41,7 @@ function requirement(): PaymentRequirement {
     maxTimeoutSeconds: 90,
     extra: {
       feePayer: address(2),
+      payloadProfile: SOLANA_SPONSORED_PROFILE,
       memo: "k1h:018f4c76-8f9a-7d3a-8e0b-123456789abc",
     },
   };
@@ -200,6 +202,19 @@ describe("Solana USDt exact transaction builder", () => {
     expect(transaction.length).toBeLessThanOrEqual(1_232);
   });
 
+  it("supports sponsored issuer-native Solana USDC", async () => {
+    const accepted = requirement();
+    accepted.asset = SOLANA_USDC_MAINNET_MINT;
+    const { message, transaction } = await buildSolanaUsdtTransaction({
+      accepted,
+      payer: address(1),
+      recentBlockhash: address(4),
+    });
+    expect(transaction[0]).toBe(2);
+    expect(transaction.slice(129)).toEqual(message);
+    expect(containsBytes(message, decodeSolanaBase58(SOLANA_USDC_MAINNET_MINT))).toBe(true);
+  });
+
   it("rejects untrusted assets, malformed memos, collisions, and excessive fees", async () => {
     const accepted = requirement();
     accepted.extra.memo = "unbound";
@@ -209,7 +224,7 @@ describe("Solana USDt exact transaction builder", () => {
         payer: address(1),
         recentBlockhash: address(4),
       }),
-    ).rejects.toThrow("native Solana USDt");
+    ).rejects.toThrow("sponsored native Solana USDC or USDT");
 
     accepted.extra.memo = "k1h:018f4c76-8f9a-7d3a-8e0b-123456789abc";
     await expect(

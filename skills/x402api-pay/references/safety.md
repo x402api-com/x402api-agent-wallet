@@ -11,6 +11,10 @@ Show the exact network, token contract or mint, public address, requested asset
 amount, and native fee requirement before funding. A correct address on the
 wrong network is not valid funding.
 
+For sponsored Base and Solana requirements, require the strict gas-sponsorship
+extension and preserve its exact requirement binding. A sponsored payment must
+never fall back to a buyer-funded transaction or require buyer ETH/SOL.
+
 ## Secret handling
 
 - Never ask for a seed phrase or private key.

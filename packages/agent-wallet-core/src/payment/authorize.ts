@@ -20,6 +20,7 @@ import { AgentWalletError } from "../errors.js";
 import {
   BASE_MAINNET_NETWORK,
   BASE_USDC_BUYER_FUNDED_PROFILE,
+  BASE_USDC_SPONSORED_PROFILE,
   BASE_USDC_MAINNET_CONTRACT,
   buildBaseUsdcAuthorization,
   buildBaseUsdcEip1559TransactionRequest,
@@ -30,13 +31,17 @@ import { verifyExternalRecipientDeclaration } from "../protocol/external-recipie
 import {
   createPaymentPayload,
   encodePaymentSignature,
+  GAS_SPONSORSHIP_EXTENSION,
   type JsonObject,
   type PaymentRequired,
   type PaymentRequirement,
 } from "../protocol/http.js";
 import {
   createSolanaPayment,
+  createSponsoredSolanaPayment,
   SOLANA_MAINNET_NETWORK,
+  SOLANA_SPONSORED_PROFILE,
+  SOLANA_USDC_MAINNET_MINT,
   SOLANA_USDT_BUYER_FUNDED_PROFILE,
   SOLANA_USDT_MAINNET_MINT,
   type SolanaRpc,
@@ -75,6 +80,12 @@ function payloadProfile(requirement: PaymentRequirement): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function sponsored(requirement: PaymentRequirement): boolean {
+  return [BASE_USDC_SPONSORED_PROFILE, SOLANA_SPONSORED_PROFILE].includes(
+    String(payloadProfile(requirement)),
+  );
+}
+
 function selectRequirement(
   paymentRequired: PaymentRequired,
   wallet: UnlockedWallet["metadata"],
@@ -92,21 +103,23 @@ function selectRequirement(
     wallet.network === BASE_MAINNET_NETWORK
       ? {
           asset: BASE_USDC_MAINNET_CONTRACT.toLowerCase(),
-          profile: BASE_USDC_BUYER_FUNDED_PROFILE,
+          profiles: [BASE_USDC_SPONSORED_PROFILE, BASE_USDC_BUYER_FUNDED_PROFILE],
         }
       : wallet.network === SOLANA_MAINNET_NETWORK
         ? {
-            asset: SOLANA_USDT_MAINNET_MINT,
-            profile: SOLANA_USDT_BUYER_FUNDED_PROFILE,
+            assets: [SOLANA_USDC_MAINNET_MINT, SOLANA_USDT_MAINNET_MINT],
+            profiles: [SOLANA_SPONSORED_PROFILE, SOLANA_USDT_BUYER_FUNDED_PROFILE],
           }
         : {
             asset: TRON_USDT_MAINNET_CONTRACT,
-            profile: "com.k1hub.x402.tron-exact.v1",
+            profiles: ["com.k1hub.x402.tron-exact.v1"],
           };
   const assetMatches = networkMatches.filter((requirement) =>
     wallet.network === BASE_MAINNET_NETWORK
       ? requirement.asset.toLowerCase() === expected.asset
-      : requirement.asset === expected.asset,
+      : "assets" in expected
+        ? expected.assets.includes(requirement.asset)
+        : requirement.asset === expected.asset,
   );
   if (assetMatches.length === 0) {
     throw new AgentWalletError(
@@ -114,16 +127,39 @@ function selectRequirement(
       "challenge does not advertise the exact supported asset",
     );
   }
-  const profileMatches = assetMatches.filter(
-    (requirement) => payloadProfile(requirement) === expected.profile,
+  const profileMatches = assetMatches.filter((requirement) =>
+    expected.profiles.includes(String(payloadProfile(requirement))),
   );
-  if (profileMatches.length !== 1) {
+  const selected =
+    profileMatches.find((requirement) => sponsored(requirement)) ?? profileMatches[0];
+  if (!selected) {
     throw new AgentWalletError(
       "unsupported_profile",
       "challenge must advertise exactly one supported payload profile",
     );
   }
-  return profileMatches[0]!;
+  if (sponsored(selected)) {
+    const declaration = paymentRequired.extensions?.[GAS_SPONSORSHIP_EXTENSION];
+    const requirements = declaration?.info.requirements;
+    const bound =
+      Array.isArray(requirements) &&
+      requirements.some(
+        (item) =>
+          typeof item === "object" &&
+          item !== null &&
+          !Array.isArray(item) &&
+          item.network === selected.network &&
+          item.asset === selected.asset &&
+          item.payloadProfile === payloadProfile(selected),
+      );
+    if (!bound) {
+      throw new AgentWalletError(
+        "sponsored_payload_invalid",
+        "sponsored requirement is not bound by the gas-sponsorship extension",
+      );
+    }
+  }
+  return selected;
 }
 
 function enforceLocalPolicy(wallet: UnlockedWallet["metadata"], amount: string): void {
@@ -148,11 +184,14 @@ async function enforceBalances(options: {
   wallet: UnlockedWallet["metadata"];
   amount: string;
   rpc: RpcConfiguration;
+  asset: string;
+  sponsored: boolean;
 }): Promise<void> {
   const balance = await readWalletBalance({
     network: options.wallet.network,
     address: options.wallet.address,
     rpc: options.rpc,
+    asset: options.asset,
   });
   if (BigInt(balance.assetAtomic) < BigInt(options.amount)) {
     throw new AgentWalletError(
@@ -167,6 +206,7 @@ async function enforceBalances(options: {
     );
   }
   if (
+    !options.sponsored &&
     BigInt(balance.nativeAtomic) === 0n &&
     (balance.network !== "tron:mainnet" ||
       BigInt(balance.feeResources?.energyAvailable ?? "0") === 0n)
@@ -273,6 +313,23 @@ async function basePayment(options: {
     typed.types,
     typed.message,
   );
+  if (payloadProfile(options.accepted) === BASE_USDC_SPONSORED_PROFILE) {
+    encodeBaseUsdcTransferWithAuthorization({
+      authorization: material.authorization,
+      signature: authorizationSignature,
+    });
+    return encodePaymentSignature(
+      createPaymentPayload({
+        paymentRequired: options.paymentRequired,
+        accepted: options.accepted,
+        paymentIdentifier: options.buyerPaymentIdentifier,
+        schemePayload: {
+          authorization: material.authorization,
+          signature: authorizationSignature,
+        },
+      }),
+    );
+  }
   const data = encodeBaseUsdcTransferWithAuthorization({
     authorization: material.authorization,
     signature: authorizationSignature,
@@ -375,18 +432,25 @@ async function solanaPayment(options: {
     connect: async () => options.wallet.metadata.address,
     signTransaction: async ({ transactionBase64 }) => {
       const transaction = Buffer.from(transactionBase64, "base64");
-      if (transaction[0] !== 1 || transaction.length < 66) {
+      const isSponsored = payloadProfile(options.accepted) === SOLANA_SPONSORED_PROFILE;
+      const signatureCount = isSponsored ? 2 : 1;
+      const messageOffset = 1 + signatureCount * 64;
+      if (transaction[0] !== signatureCount || transaction.length <= messageOffset) {
         throw new AgentWalletError("request_binding_mismatch", "Solana transaction is malformed");
       }
-      const message = transaction.subarray(65);
+      const message = transaction.subarray(messageOffset);
       const signature = nacl.sign.detached(message, keyPair.secretKey);
       const signed = Buffer.from(transaction);
-      signed.set(signature, 1);
+      signed.set(signature, isSponsored ? 65 : 1);
       return signed.toString("base64");
     },
   };
+  const create =
+    payloadProfile(options.accepted) === SOLANA_SPONSORED_PROFILE
+      ? createSponsoredSolanaPayment
+      : createSolanaPayment;
   return encodePaymentSignature(
-    await createSolanaPayment({
+    await create({
       rpc,
       wallet: transport,
       paymentRequired: options.paymentRequired,
@@ -481,6 +545,8 @@ export async function authorizePayment(options: {
     wallet: unlocked.metadata,
     amount: accepted.amount,
     rpc: options.rpc,
+    asset: accepted.asset,
+    sponsored: sponsored(accepted),
   });
   const buyerPaymentIdentifier = createBuyerPaymentIdentifier();
   let paymentSignature: string;

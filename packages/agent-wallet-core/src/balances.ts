@@ -5,6 +5,7 @@ import {
   BASE_USDC_MAINNET_CONTRACT,
 } from "./protocol/base.js";
 import {
+  SOLANA_USDC_MAINNET_MINT,
   SOLANA_USDT_MAINNET_MINT,
 } from "./protocol/solana.js";
 import { TRON_USDT_MAINNET_CONTRACT } from "./protocol/tron.js";
@@ -132,13 +133,20 @@ async function baseBalance(endpoint: string, address: string): Promise<WalletBal
   };
 }
 
-async function solanaBalance(endpoint: string, address: string): Promise<WalletBalance> {
+async function solanaBalance(
+  endpoint: string,
+  address: string,
+  selectedAsset: string = SOLANA_USDT_MAINNET_MINT,
+): Promise<WalletBalance> {
+  if (![SOLANA_USDC_MAINNET_MINT, SOLANA_USDT_MAINNET_MINT].includes(selectedAsset)) {
+    throw new AgentWalletError("unsupported_asset", "unsupported Solana stablecoin mint");
+  }
   const [genesisHash, nativeResult, tokenResult] = await Promise.all([
     jsonRpc(endpoint, "getGenesisHash", []),
     jsonRpc(endpoint, "getBalance", [address, { commitment: "confirmed" }]),
     jsonRpc(endpoint, "getTokenAccountsByOwner", [
       address,
-      { mint: SOLANA_USDT_MAINNET_MINT },
+      { mint: selectedAsset },
       { encoding: "jsonParsed", commitment: "confirmed" },
     ]),
   ]);
@@ -198,8 +206,8 @@ async function solanaBalance(endpoint: string, address: string): Promise<WalletB
     version: 1,
     network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     address,
-    asset: SOLANA_USDT_MAINNET_MINT,
-    assetSymbol: "USDT",
+    asset: selectedAsset,
+    assetSymbol: selectedAsset === SOLANA_USDC_MAINNET_MINT ? "USDC" : "USDT",
     assetAtomic: asset.toString(),
     nativeSymbol: "SOL",
     nativeAtomic: native.toString(),
@@ -312,6 +320,7 @@ export async function readWalletBalance(options: {
   network: SupportedNetwork;
   address: string;
   rpc: RpcConfiguration;
+  asset?: string;
 }): Promise<WalletBalance> {
   if (options.network === "eip155:8453") {
     if (!options.rpc.base) throw new AgentWalletError("rpc_not_configured", "Base RPC is required");
@@ -321,7 +330,11 @@ export async function readWalletBalance(options: {
     if (!options.rpc.solana) {
       throw new AgentWalletError("rpc_not_configured", "Solana RPC is required");
     }
-    return solanaBalance(validateRpcUrl(options.rpc.solana, "Solana"), options.address);
+    return solanaBalance(
+      validateRpcUrl(options.rpc.solana, "Solana"),
+      options.address,
+      options.asset,
+    );
   }
   if (!options.rpc.tron) throw new AgentWalletError("rpc_not_configured", "TRON RPC is required");
   return tronBalance(validateRpcUrl(options.rpc.tron, "TRON"), options.address);
