@@ -63,6 +63,9 @@ const expectedWireLiterals = [
   "com.k1hub.x402.solana-buyer-funded.v1",
   "com.k1hub.x402.tron-exact.v1",
   "com.k1hub.external-recipient",
+  "com.x402api.gas-sponsorship",
+  "com.x402api.x402.base-usdc-eip3009-sponsored.v1",
+  "com.x402api.x402.solana-sponsored.v1",
 ];
 const sourceText = (
   await Promise.all(
@@ -74,8 +77,16 @@ const sourceText = (
 for (const literal of expectedWireLiterals) {
   if (!sourceText.includes(literal)) failures.push(`required deployed wire literal is missing: ${literal}`);
 }
-if (sourceText.includes("com.x402api.")) {
-  failures.push("uncoordinated com.x402api wire literal detected");
+const allowedX402apiWireLiterals = new Set(
+  expectedWireLiterals.filter((literal) => literal.startsWith("com.x402api.")),
+);
+const observedX402apiWireLiterals = new Set(
+  sourceText.match(/com\.x402api\.[a-z0-9.-]+/gi) ?? [],
+);
+for (const literal of observedX402apiWireLiterals) {
+  if (!allowedX402apiWireLiterals.has(literal)) {
+    failures.push(`uncoordinated com.x402api wire literal detected: ${literal}`);
+  }
 }
 
 if (failures.length > 0) {
