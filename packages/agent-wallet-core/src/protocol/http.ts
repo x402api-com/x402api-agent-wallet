@@ -34,6 +34,12 @@ export type ExtensionDeclaration = {
   schema?: JsonObject;
 };
 
+export const GAS_SPONSORSHIP_EXTENSION = "com.x402api.gas-sponsorship";
+const BASE_USDC_SPONSORED_PROFILE =
+  "com.x402api.x402.base-usdc-eip3009-sponsored.v1";
+const SOLANA_SPONSORED_PROFILE =
+  "com.x402api.x402.solana-sponsored.v1";
+
 export type PaymentPayload = {
   x402Version: 2;
   accepted: PaymentRequirement;
@@ -223,9 +229,73 @@ function paymentPayloadExtensions(
     }
     assertJsonValue(declaration.info);
     if (declaration.schema !== undefined) assertJsonValue(declaration.schema);
+    if (name === GAS_SPONSORSHIP_EXTENSION) validateGasSponsorshipDeclaration(declaration);
     extensions[name] = declaration as ExtensionDeclaration;
   }
   return extensions;
+}
+
+function validateGasSponsorshipDeclaration(declaration: Record<string, unknown>): void {
+  const info = declaration.info;
+  const schema = declaration.schema;
+  const infoKeys = [
+    "billingParty",
+    "buyerNativeFeeRequired",
+    "expiresAt",
+    "finalChargePolicy",
+    "maximumReservationEvidenceDigest",
+    "mode",
+    "requirements",
+    "version",
+  ];
+  if (
+    !isObject(info) ||
+    Object.keys(info).sort().join(",") !== infoKeys.slice().sort().join(",") ||
+    info.version !== 1 ||
+    info.mode !== "facilitator_pays" ||
+    info.buyerNativeFeeRequired !== false ||
+    info.billingParty !== "tenant_service_credit" ||
+    info.finalChargePolicy !== "canonical_actual_gas_capped_by_reservation" ||
+    typeof info.maximumReservationEvidenceDigest !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/.test(info.maximumReservationEvidenceDigest) ||
+    typeof info.expiresAt !== "string" ||
+    !Number.isFinite(Date.parse(info.expiresAt)) ||
+    !Array.isArray(info.requirements) ||
+    info.requirements.length < 1 ||
+    info.requirements.length > 3
+  ) {
+    throw new Error("gas-sponsorship extension is malformed");
+  }
+  const identities = new Set<string>();
+  for (const item of info.requirements) {
+    if (
+      !isObject(item) ||
+      Object.keys(item).sort().join(",") !== "asset,network,payloadProfile" ||
+      typeof item.network !== "string" ||
+      !CAIP2_NETWORK.test(item.network) ||
+      typeof item.asset !== "string" ||
+      item.asset.length < 1 ||
+      ![BASE_USDC_SPONSORED_PROFILE, SOLANA_SPONSORED_PROFILE].includes(
+        String(item.payloadProfile),
+      )
+    ) {
+      throw new Error("gas-sponsorship requirement is malformed");
+    }
+    const identity = `${item.network}|${item.asset.toLowerCase()}|${item.payloadProfile}`;
+    if (identities.has(identity)) throw new Error("gas-sponsorship requirement is duplicated");
+    identities.add(identity);
+  }
+  if (
+    !isObject(schema) ||
+    schema.$id !== "urn:com:x402api:gas-sponsorship:v1" ||
+    schema.type !== "object" ||
+    schema.additionalProperties !== false ||
+    !Array.isArray(schema.required) ||
+    schema.required.length !== infoKeys.length ||
+    [...schema.required].sort().join(",") !== infoKeys.slice().sort().join(",")
+  ) {
+    throw new Error("gas-sponsorship schema is malformed");
+  }
 }
 
 export function decodePaymentRequiredHeader(value: string): PaymentRequired {
@@ -266,6 +336,7 @@ export function decodePaymentRequiredHeader(value: string): PaymentRequired {
       }
       assertJsonValue(declaration.info);
       if (declaration.schema !== undefined) assertJsonValue(declaration.schema);
+      if (name === GAS_SPONSORSHIP_EXTENSION) validateGasSponsorshipDeclaration(declaration);
       extensions[name] = declaration as ExtensionDeclaration;
     }
   }

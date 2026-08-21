@@ -16,7 +16,7 @@
     "typecheck": "npm run build --workspace @x402api/agent-wallet-core && npm run typecheck --workspace @x402api/agent-wallet-core && npm run typecheck --workspace @x402api/agent-wallet-cli",
     "test": "npm run build --workspace @x402api/agent-wallet-core && npm run test --workspaces --if-present",
     "test:coverage": "npm run build --workspace @x402api/agent-wallet-core && npm run test:coverage --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present && node tools/validate-repository.mjs",
+    "lint": "npm run build --workspace @x402api/agent-wallet-core && npm run lint --workspaces --if-present && node tools/validate-repository.mjs",
     "pack:smoke": "node tools/pack-smoke.mjs",
     "validate:skill": "node tools/validate-skill.mjs skills/x402api-pay",
     "check": "npm run lint && npm run typecheck && npm test && npm run build && npm run validate:skill && npm run pack:smoke"

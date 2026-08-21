@@ -5,6 +5,10 @@ that purchase from x402 endpoints. It keeps private keys on the agent host,
 uses separate wallets for Base, Solana, and TRON, and emits owner-only payment
 artifacts for exact merchant requests.
 
+The launch path supports sponsored Base USDC and sponsored Solana USDC/USDT.
+The buyer signs token authority only; x402api supplies ETH/SOL and charges the
+merchant tenant's prepaid service credit. TRON is not an advertised launch rail.
+
 > **Status:** pre-release implementation. Do not fund wallets with more than
 > you are prepared for the agent host to spend or lose. Mainnet use is blocked
 > until the live release gates in the implementation plan are complete.

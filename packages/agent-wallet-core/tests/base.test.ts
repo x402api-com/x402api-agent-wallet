@@ -7,6 +7,7 @@ import {
   BASE_MAINNET_CHAIN_ID,
   BASE_MAINNET_NETWORK,
   BASE_USDC_BUYER_FUNDED_PROFILE,
+  BASE_USDC_SPONSORED_PROFILE,
   BASE_USDC_MAINNET_CONTRACT,
   buildBaseUsdcAuthorization,
   buildBaseUsdcEip1559TransactionRequest,
@@ -57,6 +58,19 @@ const transactionPolicy = {
 };
 
 describe("Base issuer-native USDC buyer-funded conformance", () => {
+  it("builds the same issuer authorization without a buyer gas transaction", () => {
+    const accepted = requirement();
+    accepted.extra.payloadProfile = BASE_USDC_SPONSORED_PROFILE;
+    const material = buildBaseUsdcAuthorization({
+      accepted,
+      payer: vector.payer,
+      nowSeconds: vector.nowSeconds,
+      challengeDigest: vector.challengeDigest,
+    });
+    expect(material.authorization.from).toBe(vector.payer);
+    expect(material.authorization.nonce).toBe(`0x${"55".repeat(32)}`);
+  });
+
   it("matches the backend EIP-712, ABI, and signed EIP-1559 vector", () => {
     expect(BASE_MAINNET_CHAIN_ID).toBe(8453);
     const { authorization, typedData } = buildBaseUsdcAuthorization({

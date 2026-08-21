@@ -30,6 +30,8 @@ export const BASE_USDC_MAINNET_CONTRACT =
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 export const BASE_USDC_BUYER_FUNDED_PROFILE =
   "com.k1hub.x402.base-usdc-eip3009-buyer-funded.v1";
+export const BASE_USDC_SPONSORED_PROFILE =
+  "com.x402api.x402.base-usdc-eip3009-sponsored.v1";
 
 const BASE_CHAIN_ID_HEX = "0x2105";
 const BASE_MAX_AUTHORIZATION_SECONDS = 300;
@@ -80,7 +82,9 @@ function validateBaseRequirement(accepted: PaymentRequirement): void {
     extra.assetTransferMethod !== "eip3009" ||
     extra.name !== "USD Coin" ||
     extra.version !== "2" ||
-    extra.payloadProfile !== BASE_USDC_BUYER_FUNDED_PROFILE
+    ![BASE_USDC_BUYER_FUNDED_PROFILE, BASE_USDC_SPONSORED_PROFILE].includes(
+      String(extra.payloadProfile),
+    )
   ) {
     throw new Error(
       "requirement is not buyer-funded issuer-native Base USDC EIP-3009",
