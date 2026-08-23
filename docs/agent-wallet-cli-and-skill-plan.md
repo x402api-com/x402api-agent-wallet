@@ -1,21 +1,45 @@
 # x402api Agent Wallet CLI and Skill Plan
 
-**Status:** Implementation in progress; GA acceptance remains release-gated
+**Status:** 0.2.0 release candidate; registry publication remains release-gated
 
-**Date:** 2026-08-19
+**Date:** 2026-08-19; launch amendment 2026-08-22
 
 **Scope:** Open-source persistent agent wallet CLI, portable agent skill, and
 merchant integration contract
 
 **First reference merchant:** WarpMetal
 
-**Initial rails:** Base USDC, Solana USDT, and TRON USDT on Mainnet
+**Launch payment rails:** sponsored Base USDC and sponsored Solana USDC/USDT
 
-**Canonical repository:** `x402api-com/x402api-agent-wallet` (new public
-repository)
+**Canonical repository:** `x402api-com/x402api-agent-wallet`
 
-**Implementation baseline:** External-Wallet x402 V1, `@k1hub/x402-http`, and
-`@k1hub/browser-wallet-sdk` in `Fractal-Grid-AI/k1hub_402_payments`
+**Implementation baseline:** public agent-wallet protocol code extracted from
+the private hosted-platform packages listed in `source-provenance.md`
+
+## Launch amendment
+
+This amendment supersedes conflicting rail, fee, profile, and signer-only
+statements in the original phased design record below:
+
+- The launch authorization orchestrator selects only sponsored Base USDC and
+  sponsored Solana USDC/USDT requirements with the exact
+  `com.x402api.gas-sponsorship` binding.
+- x402api supplies ETH/SOL and charges the merchant tenant's prepaid gas
+  billing. The buyer funds only the payment token and is never asked to fall
+  back to buyer-funded gas.
+- TRON wallet management and low-level conformance code remain available, but
+  TRON payment authorization is coming soon and is rejected by the public
+  payer.
+- The CLI supports both explicit `payment authorize` / `payment submit` and a
+  combined `pay` command for credential-free paid endpoints. Exact attempts,
+  signatures, response bodies, and settlement evidence are durable.
+- `payment reconcile` replays the exact request and signature. Ambiguous or
+  settled states cannot be erased by a later transport error or replay 402.
+- The matching `x402api-pay` skill is bundled in the CLI package and installed
+  with `x402api skill install`; an existing skill directory is never
+  overwritten.
+- Public packages use only `@x402api/*`. Private `@k1hub/*` packages remain
+  hosted-platform implementation dependencies and are not customer installs.
 
 ## 1. Executive decision
 
@@ -74,7 +98,7 @@ The current x402api implementation already contains the reusable buyer-side
 protocol primitives:
 
 - `@k1hub/x402-http` strictly decodes and encodes x402 v2 headers;
-- `@k1hub/browser-wallet-sdk` constructs and validates supported buyer-funded
+- `@k1hub/browser-wallet-sdk` constructs and validates hosted checkout
   payments; and
 - the platform defines the exact payload profiles accepted by its facilitator.
 
@@ -162,7 +186,7 @@ amounts, or tell a model to implement missing cryptography itself.
 - Hosted x402api custody of agent wallets or funds.
 - Access to the owner's primary wallet private key.
 - Fiat onramp, token swaps, bridges, or automatic balance replenishment.
-- Automatic gas sponsorship or gas acquisition.
+- Buyer-side gas acquisition, swaps, or automatic wallet replenishment.
 - Smart-account delegation, MPC, HSM, or third-party wallet integrations.
 - A hosted policy engine or approval service.
 - Arbitrary message signing, arbitrary transaction signing, trading, or token
@@ -657,21 +681,19 @@ Required invariants:
 
 These rules must be implemented in deterministic code, not left to skill prose.
 
-## 11. Production V1 rail implementation
+## 11. Production launch rail implementation
 
-V1 supports all three currently documented x402api production rails:
+The public payer supports these exact sponsored launch rails:
 
 | Rail | Network | Exact asset | Runtime profile |
 | --- | --- | --- | --- |
-| Base USDC | `eip155:8453` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | `com.k1hub.x402.base-usdc-eip3009-buyer-funded.v1` |
-| Solana USDT | `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | `com.k1hub.x402.solana-buyer-funded.v1` |
-| TRON USDT | `tron:mainnet` | `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t` | `com.k1hub.x402.tron-exact.v1` |
+| Base USDC | `eip155:8453` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | `com.x402api.x402.base-usdc-eip3009-sponsored.v1` |
+| Solana USDC | `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` | `com.x402api.x402.solana-sponsored.v1` |
+| Solana USDT | `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | `com.x402api.x402.solana-sponsored.v1` |
 
-V1 deliberately preserves the deployed `com.k1hub...` runtime literals. These
-are signed wire identifiers, not package branding. The CLI compares literal
-advertised profiles and does not alias names. A future `com.x402api...`
-migration requires a new version and one atomic facilitator, SDK, merchant,
-fixture, and machine-documentation rollout.
+The `com.x402api...` values are signed wire identifiers. The CLI compares
+literal advertised profiles and does not alias names or fall back to dormant
+buyer-funded/TRON profiles.
 
 ### 11.1 Common requirements
 
@@ -701,7 +723,7 @@ fixture, and machine-documentation rollout.
   fields, recovered signer, and canonical low-s signatures.
 - Report USDC and ETH balances separately.
 
-### 11.3 Solana USDT adapter
+### 11.3 Solana USDC/USDT adapter
 
 - Generate and store an ed25519 keypair for the Solana wallet.
 - Derive and display the base58 Solana public address without an EVM prefix.
@@ -715,7 +737,7 @@ fixture, and machine-documentation rollout.
   vector.
 - Report USDT token-account balance and SOL balance separately.
 
-### 11.4 TRON USDT adapter
+### 11.4 TRON USDT adapter (coming soon)
 
 - Generate and store a secp256k1 key dedicated to the TRON wallet.
 - Derive and display the Mainnet base58check address beginning with `T`.
@@ -728,13 +750,13 @@ fixture, and machine-documentation rollout.
   unexpected recovered signer.
 - Report USDT and TRX/resource availability separately.
 
-### 11.5 Deferred fee handling
+### 11.5 Sponsored fee handling
 
-Automatic gas/resource acquisition, sponsorship, bridging, and swapping are
-deferred for all three rails. The CLI must still expose asset and native-fee or
-resource status separately and return a stable
-`insufficient_network_fee_resources` error when applicable. This preserves a
-future fee solution without redesigning the wallet or payment API.
+Launch challenges bind each requirement to a short-lived gas-sponsorship
+reservation. The payer verifies that binding and its expiry before RPC or
+signing. x402api supplies ETH/SOL; the buyer needs only the stablecoin. A
+sponsorship failure returns a stable error and never triggers buyer-funded gas,
+bridging, swapping, or another rail.
 
 ## 12. Agent skill design
 

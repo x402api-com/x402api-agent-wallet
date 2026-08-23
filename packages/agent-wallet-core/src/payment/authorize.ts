@@ -1,12 +1,6 @@
 import { resolve } from "node:path";
 
-import {
-  Wallet,
-  type TransactionRequest,
-  type TypedDataDomain,
-  type TypedDataField,
-} from "ethers";
-import { TronWeb } from "tronweb";
+import { Wallet, type TypedDataDomain, type TypedDataField } from "ethers";
 import nacl from "tweetnacl";
 
 import {
@@ -19,13 +13,10 @@ import {
 import { AgentWalletError } from "../errors.js";
 import {
   BASE_MAINNET_NETWORK,
-  BASE_USDC_BUYER_FUNDED_PROFILE,
   BASE_USDC_SPONSORED_PROFILE,
   BASE_USDC_MAINNET_CONTRACT,
   buildBaseUsdcAuthorization,
-  buildBaseUsdcEip1559TransactionRequest,
   encodeBaseUsdcTransferWithAuthorization,
-  verifyBuyerSignedBaseUsdcTransaction,
 } from "../protocol/base.js";
 import { verifyExternalRecipientDeclaration } from "../protocol/external-recipient.js";
 import {
@@ -37,24 +28,14 @@ import {
   type PaymentRequirement,
 } from "../protocol/http.js";
 import {
-  createSolanaPayment,
   createSponsoredSolanaPayment,
   SOLANA_MAINNET_NETWORK,
   SOLANA_SPONSORED_PROFILE,
   SOLANA_USDC_MAINNET_MINT,
-  SOLANA_USDT_BUYER_FUNDED_PROFILE,
   SOLANA_USDT_MAINNET_MINT,
   type SolanaRpc,
   type SolanaWalletTransport,
 } from "../protocol/solana.js";
-import {
-  createTronUsdtPayment,
-  TRON_MAINNET_CHAIN_ID,
-  TRON_USDT_MAINNET_CONTRACT,
-  TronWebTransactionBuilder,
-  type TronTransactionParts,
-  type TronWalletProvider,
-} from "../protocol/tron.js";
 import { unlockWallet, type UnlockedWallet } from "../storage/keystore.js";
 import { AttemptStore } from "./attempt-store.js";
 import {
@@ -89,6 +70,7 @@ function sponsored(requirement: PaymentRequirement): boolean {
 function selectRequirement(
   paymentRequired: PaymentRequired,
   wallet: UnlockedWallet["metadata"],
+  now: Date,
 ): PaymentRequirement {
   const networkMatches = paymentRequired.accepts.filter(
     (requirement) => requirement.network === wallet.network,
@@ -103,17 +85,20 @@ function selectRequirement(
     wallet.network === BASE_MAINNET_NETWORK
       ? {
           asset: BASE_USDC_MAINNET_CONTRACT.toLowerCase(),
-          profiles: [BASE_USDC_SPONSORED_PROFILE, BASE_USDC_BUYER_FUNDED_PROFILE],
+          profiles: [BASE_USDC_SPONSORED_PROFILE],
         }
       : wallet.network === SOLANA_MAINNET_NETWORK
         ? {
             assets: [SOLANA_USDC_MAINNET_MINT, SOLANA_USDT_MAINNET_MINT],
-            profiles: [SOLANA_SPONSORED_PROFILE, SOLANA_USDT_BUYER_FUNDED_PROFILE],
+            profiles: [SOLANA_SPONSORED_PROFILE],
           }
-        : {
-            asset: TRON_USDT_MAINNET_CONTRACT,
-            profiles: ["com.k1hub.x402.tron-exact.v1"],
-          };
+        : null;
+  if (expected === null) {
+    throw new AgentWalletError(
+      "unsupported_profile",
+      "TRON payments are coming soon and are not enabled in the launch payer",
+    );
+  }
   const assetMatches = networkMatches.filter((requirement) =>
     wallet.network === BASE_MAINNET_NETWORK
       ? requirement.asset.toLowerCase() === expected.asset
@@ -130,39 +115,49 @@ function selectRequirement(
   const profileMatches = assetMatches.filter((requirement) =>
     expected.profiles.includes(String(payloadProfile(requirement))),
   );
-  const selected =
-    profileMatches.find((requirement) => sponsored(requirement)) ?? profileMatches[0];
+  const selected = profileMatches.find((requirement) => sponsored(requirement));
   if (!selected) {
     throw new AgentWalletError(
       "unsupported_profile",
-      "challenge must advertise exactly one supported payload profile",
+      "challenge must advertise a sponsored launch payload profile",
     );
   }
-  if (sponsored(selected)) {
-    const declaration = paymentRequired.extensions?.[GAS_SPONSORSHIP_EXTENSION];
-    const requirements = declaration?.info.requirements;
-    const bound =
-      Array.isArray(requirements) &&
-      requirements.some(
-        (item) =>
-          typeof item === "object" &&
-          item !== null &&
-          !Array.isArray(item) &&
-          item.network === selected.network &&
-          item.asset === selected.asset &&
-          item.payloadProfile === payloadProfile(selected),
-      );
-    if (!bound) {
-      throw new AgentWalletError(
-        "sponsored_payload_invalid",
-        "sponsored requirement is not bound by the gas-sponsorship extension",
-      );
-    }
+  const declaration = paymentRequired.extensions?.[GAS_SPONSORSHIP_EXTENSION];
+  const requirements = declaration?.info.requirements;
+  const bound =
+    Array.isArray(requirements) &&
+    requirements.some(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        !Array.isArray(item) &&
+        item.network === selected.network &&
+        item.asset === selected.asset &&
+        item.payloadProfile === payloadProfile(selected),
+    );
+  if (!bound) {
+    throw new AgentWalletError(
+      "sponsored_payload_invalid",
+      "sponsored requirement is not bound by the gas-sponsorship extension",
+    );
+  }
+  const sponsorshipExpiresAt = declaration?.info.expiresAt;
+  if (
+    typeof sponsorshipExpiresAt !== "string" ||
+    Date.parse(sponsorshipExpiresAt) <= now.getTime()
+  ) {
+    throw new AgentWalletError(
+      "sponsorship_reservation_expired",
+      "the sponsored gas reservation has expired",
+    );
   }
   return selected;
 }
 
-function enforceLocalPolicy(wallet: UnlockedWallet["metadata"], amount: string): void {
+function enforceLocalPolicy(
+  wallet: UnlockedWallet["metadata"],
+  amount: string,
+): void {
   if (
     wallet.maximumPaymentAtomic !== undefined &&
     BigInt(amount) > BigInt(wallet.maximumPaymentAtomic)
@@ -237,11 +232,17 @@ function typedDataParts(value: JsonObject): {
     message === null ||
     Array.isArray(message)
   ) {
-    throw new AgentWalletError("request_binding_mismatch", "Base typed data is malformed");
+    throw new AgentWalletError(
+      "request_binding_mismatch",
+      "Base typed data is malformed",
+    );
   }
   const transfer = (types as Record<string, unknown>).TransferWithAuthorization;
   if (!Array.isArray(transfer)) {
-    throw new AgentWalletError("request_binding_mismatch", "Base typed data types are malformed");
+    throw new AgentWalletError(
+      "request_binding_mismatch",
+      "Base typed data types are malformed",
+    );
   }
   return {
     domain: domain as TypedDataDomain,
@@ -252,34 +253,6 @@ function typedDataParts(value: JsonObject): {
   };
 }
 
-function requestFromJson(value: JsonObject): TransactionRequest {
-  const required = [
-    "chainId",
-    "nonce",
-    "gas",
-    "maxFeePerGas",
-    "maxPriorityFeePerGas",
-    "to",
-    "value",
-    "data",
-  ];
-  if (required.some((key) => typeof value[key] !== "string")) {
-    throw new AgentWalletError("request_binding_mismatch", "Base transaction request is malformed");
-  }
-  return {
-    type: 2,
-    chainId: BigInt(value.chainId as string),
-    nonce: Number(BigInt(value.nonce as string)),
-    gasLimit: BigInt(value.gas as string),
-    maxFeePerGas: BigInt(value.maxFeePerGas as string),
-    maxPriorityFeePerGas: BigInt(value.maxPriorityFeePerGas as string),
-    to: value.to as string,
-    value: BigInt(value.value as string),
-    data: value.data as string,
-    accessList: [],
-  };
-}
-
 async function basePayment(options: {
   wallet: UnlockedWallet;
   paymentRequired: PaymentRequired;
@@ -287,14 +260,21 @@ async function basePayment(options: {
   challengeDigest: string;
   buyerPaymentIdentifier: string;
   rpc: string;
+  now: Date;
 }): Promise<string> {
   if (!options.wallet.secret.privateKeyHex) {
-    throw new AgentWalletError("wallet_locked", "Base private key is unavailable");
+    throw new AgentWalletError(
+      "wallet_locked",
+      "Base private key is unavailable",
+    );
   }
   const endpoint = validateRpcUrl(options.rpc, "Base");
   const chainId = await jsonRpc(endpoint, "eth_chainId", []);
   if (chainId !== "0x2105") {
-    throw new AgentWalletError("unsupported_network", "Base RPC is not chain ID 8453");
+    throw new AgentWalletError(
+      "unsupported_network",
+      "Base RPC is not chain ID 8453",
+    );
   }
   await verifyExternalRecipientDeclaration({
     paymentRequired: options.paymentRequired,
@@ -304,7 +284,7 @@ async function basePayment(options: {
   const material = buildBaseUsdcAuthorization({
     accepted: options.accepted,
     payer: signer.address,
-    nowSeconds: Math.floor(Date.now() / 1000),
+    nowSeconds: Math.floor(options.now.getTime() / 1000),
     challengeDigest: options.challengeDigest,
   });
   const typed = typedDataParts(material.typedData);
@@ -313,80 +293,19 @@ async function basePayment(options: {
     typed.types,
     typed.message,
   );
-  if (payloadProfile(options.accepted) === BASE_USDC_SPONSORED_PROFILE) {
-    encodeBaseUsdcTransferWithAuthorization({
-      authorization: material.authorization,
-      signature: authorizationSignature,
-    });
-    return encodePaymentSignature(
-      createPaymentPayload({
-        paymentRequired: options.paymentRequired,
-        accepted: options.accepted,
-        paymentIdentifier: options.buyerPaymentIdentifier,
-        schemePayload: {
-          authorization: material.authorization,
-          signature: authorizationSignature,
-        },
-      }),
-    );
-  }
-  const data = encodeBaseUsdcTransferWithAuthorization({
+  encodeBaseUsdcTransferWithAuthorization({
     authorization: material.authorization,
     signature: authorizationSignature,
   });
-  const [nonceRaw, blockRaw, priorityRaw] = await Promise.all([
-    jsonRpc(endpoint, "eth_getTransactionCount", [signer.address, "pending"]),
-    jsonRpc(endpoint, "eth_getBlockByNumber", ["latest", false]),
-    jsonRpc(endpoint, "eth_maxPriorityFeePerGas", []),
-  ]);
-  if (
-    typeof nonceRaw !== "string" ||
-    typeof priorityRaw !== "string" ||
-    typeof blockRaw !== "object" ||
-    blockRaw === null ||
-    !("baseFeePerGas" in blockRaw) ||
-    typeof blockRaw.baseFeePerGas !== "string"
-  ) {
-    throw new AgentWalletError("rpc_unavailable", "Base fee policy is unavailable");
-  }
-  const priority = BigInt(priorityRaw);
-  const maxFee = BigInt(blockRaw.baseFeePerGas) * 2n + priority;
-  const provisional = buildBaseUsdcEip1559TransactionRequest({
-    accepted: options.accepted,
-    payer: signer.address,
-    data,
-    policy: {
-      nonce: BigInt(nonceRaw),
-      gasLimit: 150_000n,
-      maxFeePerGas: maxFee,
-      maxPriorityFeePerGas: priority,
-    },
-  });
-  const estimatedRaw = await jsonRpc(endpoint, "eth_estimateGas", [provisional]);
-  if (typeof estimatedRaw !== "string") {
-    throw new AgentWalletError("rpc_unavailable", "Base gas estimate is unavailable");
-  }
-  const estimated = BigInt(estimatedRaw);
-  const gasLimit = (estimated * 120n + 99n) / 100n;
-  const request = buildBaseUsdcEip1559TransactionRequest({
-    accepted: options.accepted,
-    payer: signer.address,
-    data,
-    policy: {
-      nonce: BigInt(nonceRaw),
-      gasLimit,
-      maxFeePerGas: maxFee,
-      maxPriorityFeePerGas: priority,
-    },
-  });
-  const signedTransaction = await signer.signTransaction(requestFromJson(request));
-  verifyBuyerSignedBaseUsdcTransaction({ signedTransaction, request });
   return encodePaymentSignature(
     createPaymentPayload({
       paymentRequired: options.paymentRequired,
       accepted: options.accepted,
       paymentIdentifier: options.buyerPaymentIdentifier,
-      schemePayload: { transaction: signedTransaction },
+      schemePayload: {
+        authorization: material.authorization,
+        signature: authorizationSignature,
+      },
     }),
   );
 }
@@ -404,7 +323,10 @@ async function solanaPayment(options: {
   const endpoint = validateRpcUrl(options.rpc, "Solana");
   const genesis = await jsonRpc(endpoint, "getGenesisHash", []);
   if (genesis !== SOLANA_MAINNET_GENESIS_HASH) {
-    throw new AgentWalletError("unsupported_network", "Solana RPC is not Mainnet Beta");
+    throw new AgentWalletError(
+      "unsupported_network",
+      "Solana RPC is not Mainnet Beta",
+    );
   }
   const seed = Buffer.from(options.wallet.secret.seedBase64, "base64");
   const keyPair = nacl.sign.keyPair.fromSeed(seed);
@@ -423,7 +345,10 @@ async function solanaPayment(options: {
           ? result.value.blockhash
           : null;
       if (typeof blockhash !== "string") {
-        throw new AgentWalletError("rpc_unavailable", "Solana blockhash is unavailable");
+        throw new AgentWalletError(
+          "rpc_unavailable",
+          "Solana blockhash is unavailable",
+        );
       }
       return blockhash;
     },
@@ -432,85 +357,31 @@ async function solanaPayment(options: {
     connect: async () => options.wallet.metadata.address,
     signTransaction: async ({ transactionBase64 }) => {
       const transaction = Buffer.from(transactionBase64, "base64");
-      const isSponsored = payloadProfile(options.accepted) === SOLANA_SPONSORED_PROFILE;
-      const signatureCount = isSponsored ? 2 : 1;
+      const signatureCount = 2;
       const messageOffset = 1 + signatureCount * 64;
-      if (transaction[0] !== signatureCount || transaction.length <= messageOffset) {
-        throw new AgentWalletError("request_binding_mismatch", "Solana transaction is malformed");
+      if (
+        transaction[0] !== signatureCount ||
+        transaction.length <= messageOffset
+      ) {
+        throw new AgentWalletError(
+          "request_binding_mismatch",
+          "Solana transaction is malformed",
+        );
       }
       const message = transaction.subarray(messageOffset);
       const signature = nacl.sign.detached(message, keyPair.secretKey);
       const signed = Buffer.from(transaction);
-      signed.set(signature, isSponsored ? 65 : 1);
+      signed.set(signature, 65);
       return signed.toString("base64");
     },
   };
-  const create =
-    payloadProfile(options.accepted) === SOLANA_SPONSORED_PROFILE
-      ? createSponsoredSolanaPayment
-      : createSolanaPayment;
   return encodePaymentSignature(
-    await create({
+    await createSponsoredSolanaPayment({
       rpc,
       wallet: transport,
       paymentRequired: options.paymentRequired,
       accepted: options.accepted,
       buyerPaymentIdentifier: options.buyerPaymentIdentifier,
-    }),
-  );
-}
-
-async function tronPayment(options: {
-  wallet: UnlockedWallet;
-  paymentRequired: PaymentRequired;
-  accepted: PaymentRequirement;
-  buyerPaymentIdentifier: string;
-  rpc: string;
-}): Promise<string> {
-  if (!options.wallet.secret.privateKeyHex) {
-    throw new AgentWalletError("wallet_locked", "TRON private key is unavailable");
-  }
-  const endpoint = validateRpcUrl(options.rpc, "TRON");
-  const tronWeb = new TronWeb({
-    fullHost: endpoint,
-    privateKey: options.wallet.secret.privateKeyHex,
-  });
-  const provider: TronWalletProvider = {
-    requestAccounts: async () => [options.wallet.metadata.address],
-    getNetwork: async () => ({ networkType: "Mainnet", chainId: TRON_MAINNET_CHAIN_ID }),
-    signTransaction: async (transaction: TronTransactionParts) => {
-      if (!transaction.walletDocument) {
-        throw new AgentWalletError("request_binding_mismatch", "TRON wallet document is missing");
-      }
-      const signed = (await tronWeb.trx.sign(
-        transaction.walletDocument as never,
-        options.wallet.secret.privateKeyHex,
-      )) as unknown as JsonObject;
-      const result: TronTransactionParts = {
-        txID: String(signed.txID),
-        raw_data_hex: String(signed.raw_data_hex),
-        walletDocument: signed,
-      };
-      if (Array.isArray(signed.signature)) {
-        result.signature = signed.signature.map((value) => String(value));
-      }
-      return result;
-    },
-    disconnect: async () => undefined,
-  };
-  const builder = new TronWebTransactionBuilder({
-    tronWeb: tronWeb as unknown as ConstructorParameters<typeof TronWebTransactionBuilder>[0]["tronWeb"],
-    feeLimitSun: 150_000_000,
-  });
-  return encodePaymentSignature(
-    await createTronUsdtPayment({
-      builder,
-      provider,
-      paymentRequired: options.paymentRequired,
-      accepted: options.accepted,
-      buyerPaymentIdentifier: options.buyerPaymentIdentifier,
-      trustedAssetContracts: [TRON_USDT_MAINNET_CONTRACT],
-      maxFeeLimitSun: 150_000_000,
     }),
   );
 }
@@ -523,18 +394,27 @@ export async function authorizePayment(options: {
   requestEnvelopePath: string;
   artifactPath: string;
   rpc: RpcConfiguration;
+  now?: Date;
 }): Promise<AuthorizationResult> {
+  const now = options.now ?? new Date();
   const unlocked = await unlockWallet(
     options.walletsDirectory,
     options.wallet,
     options.passphrase,
   );
   const loaded = await loadRequestEnvelope(options.requestEnvelopePath);
-  const accepted = selectRequirement(loaded.paymentRequired, unlocked.metadata);
+  const accepted = selectRequirement(
+    loaded.paymentRequired,
+    unlocked.metadata,
+    now,
+  );
   enforceLocalPolicy(unlocked.metadata, accepted.amount);
   const store = new AttemptStore(options.attemptsDirectory);
   const existing = await store.findByRequestDigest(loaded.requestDigest);
-  if (existing !== null && !["terminal_failed", "abandoned_local"].includes(existing.state)) {
+  if (
+    existing !== null &&
+    !["terminal_failed", "abandoned_local"].includes(existing.state)
+  ) {
     throw new AgentWalletError(
       "attempt_already_exists",
       "reuse the existing payment attempt for this exact request",
@@ -551,7 +431,8 @@ export async function authorizePayment(options: {
   const buyerPaymentIdentifier = createBuyerPaymentIdentifier();
   let paymentSignature: string;
   if (unlocked.metadata.network === BASE_MAINNET_NETWORK) {
-    if (!options.rpc.base) throw new AgentWalletError("rpc_not_configured", "Base RPC is required");
+    if (!options.rpc.base)
+      throw new AgentWalletError("rpc_not_configured", "Base RPC is required");
     paymentSignature = await basePayment({
       wallet: unlocked,
       paymentRequired: loaded.paymentRequired,
@@ -559,10 +440,14 @@ export async function authorizePayment(options: {
       challengeDigest: loaded.envelope.challengeDigest,
       buyerPaymentIdentifier,
       rpc: options.rpc.base,
+      now,
     });
   } else if (unlocked.metadata.network === SOLANA_MAINNET_NETWORK) {
     if (!options.rpc.solana) {
-      throw new AgentWalletError("rpc_not_configured", "Solana RPC is required");
+      throw new AgentWalletError(
+        "rpc_not_configured",
+        "Solana RPC is required",
+      );
     }
     paymentSignature = await solanaPayment({
       wallet: unlocked,
@@ -572,18 +457,21 @@ export async function authorizePayment(options: {
       rpc: options.rpc.solana,
     });
   } else {
-    if (!options.rpc.tron) throw new AgentWalletError("rpc_not_configured", "TRON RPC is required");
-    paymentSignature = await tronPayment({
-      wallet: unlocked,
-      paymentRequired: loaded.paymentRequired,
-      accepted,
-      buyerPaymentIdentifier,
-      rpc: options.rpc.tron,
-    });
+    throw new AgentWalletError(
+      "unsupported_profile",
+      "TRON payments are coming soon and are not enabled in the launch payer",
+    );
   }
   const selectedRequirementDigest = requirementDigest(accepted);
+  const sponsorshipExpiresAt = String(
+    loaded.paymentRequired.extensions?.[GAS_SPONSORSHIP_EXTENSION]?.info
+      .expiresAt,
+  );
   const expiresAt = new Date(
-    Date.now() + Math.min(accepted.maxTimeoutSeconds, 3600) * 1000,
+    Math.min(
+      now.getTime() + Math.min(accepted.maxTimeoutSeconds, 3600) * 1000,
+      Date.parse(sponsorshipExpiresAt),
+    ),
   ).toISOString();
   const { record } = await store.persistAuthorized({
     requestDigest: loaded.requestDigest,

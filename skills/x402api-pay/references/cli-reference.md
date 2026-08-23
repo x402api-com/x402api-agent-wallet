@@ -58,15 +58,21 @@ subscription; those values are intentionally not CLI arguments.
 
 ```text
 x402api payment authorize --wallet NAME --request-envelope FILE --artifact-out FILE --json
+x402api payment submit --attempt ID --request-envelope FILE --json
 x402api payment status --attempt ID --json
 x402api payment artifact --attempt ID --output FILE --json
 x402api payment abandon --attempt ID --json
-x402api payment reconcile --attempt ID --json
+x402api payment reconcile --attempt ID --request-envelope FILE --json
+x402api pay --wallet NAME --request-envelope FILE --artifact-out FILE --json
 ```
 
 The authorization result includes the attempt ID, wallet, payer address,
 network, asset, amount, artifact path, and `authorized` state. Ordinary output
-does not include the full signature.
+does not include the full signature. Submission sends only the exact
+credential-free request from the envelope, disables redirects, and stores the
+bounded response body and `PAYMENT-RESPONSE` evidence in owner-only files.
+`pay` combines authorization and first submission; explicit commands are safer
+when a merchant-specific integration owns the request lifecycle.
 
 ## Stable error routing
 
@@ -75,13 +81,17 @@ does not include the full signature.
 - `wallet_storage_unsafe`, `payment_artifact_corrupt`: stop and escalate.
 - `insufficient_asset_balance`: show exact funding instructions or request a
   registered refill notification.
-- `insufficient_network_fee_resources`: applies only to buyer-funded profiles;
-  request the network's native fee asset/resource and do not swap automatically.
+- `insufficient_network_fee_resources`: is not expected for a valid launch
+  profile; stop because the merchant challenge was not safely sponsored.
 - `gas_treasury_below_floor`, `tenant_gas_credit_insufficient`,
   `sponsorship_reservation_expired`: the sponsored rail is temporarily not
   admissible; do not switch to buyer-funded gas.
-- `sponsored_payload_invalid`, `sponsor_signature_unavailable`: stop and retain
-  the attempt for safe retry or operator review.
+- `sponsored_payload_invalid`: stop; the challenge or signed payload is not
+  safely sponsored.
+- `sponsor_signature_unavailable`: retain the exact attempt and retry with
+  bounded backoff.
+- `settlement_outcome_unknown`: keep the exact attempt and request envelope;
+  retry or reconcile them without creating a new authorization.
 - `unsupported_network`, `unsupported_asset`, `unsupported_profile`,
   `request_binding_mismatch`: stop; never fall back.
 - `attempt_already_exists`, `attempt_ambiguous`: reuse and reconcile the named

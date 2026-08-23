@@ -8,3 +8,4 @@ coverage/
 .env.*
 !.env.example
 .x402api/
+packages/agent-wallet-cli/skill/

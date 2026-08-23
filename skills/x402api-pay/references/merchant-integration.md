@@ -1,8 +1,9 @@
 # Merchant and notification integration
 
-The merchant integration owns business authentication and HTTP submission.
-The wallet owns keys, exact payment authorization, and durable attempt state.
-Do not merge these trust boundaries.
+The merchant integration owns product selection and any separate business
+authentication. The wallet owns keys, exact payment authorization, durable
+attempt state, and optional submission of an exact credential-free paid
+request. Do not put merchant credentials into the wallet envelope.
 
 ## Request envelope
 
@@ -26,17 +27,23 @@ paid submission. The decoded `resource.url` must equal the normalized envelope
 URL. The envelope excludes authorization headers, cookies, API keys, SSH keys,
 and owner tokens.
 
-## Payment artifact handoff
+## Payment submission or artifact handoff
 
 `payment authorize` writes an owner-only artifact once and records its digest
-and attempt before returning. The merchant tool reads the artifact locally,
-adds `PAYMENT-SIGNATURE` to the exact request, and submits using its own
-credentials. It must preserve the exact method, URL, content type, and body.
+and attempt before returning. For a credential-free paid endpoint,
+`payment submit` adds `PAYMENT-SIGNATURE` and sends the exact method, URL,
+content type, and body. It disables redirects, bounds the response, and stores
+the body and settlement evidence privately. `pay` combines these two steps.
 
-On timeout or an asynchronous response, query merchant/facilitator status with
-the buyer payment identifier or attempt reference. Reuse the artifact for a
-safe retry only when that protocol permits it. Never create a second
-authorization to resolve uncertainty.
+When separate merchant credentials are required, a merchant-specific tool must
+read the artifact locally and perform submission. Credentials must never be
+placed in the request envelope or passed to the wallet CLI.
+
+On timeout or an asynchronous response, run `payment reconcile` with the same
+attempt and exact request envelope, or query merchant/facilitator status with
+the buyer payment identifier. Reuse the artifact for a safe exact retry. Never
+create a second authorization to resolve uncertainty. A settled attempt is
+never downgraded by a later transport or replay failure.
 
 ## Hosted refill endpoint
 

@@ -2,16 +2,17 @@
 
 `x402api-agent-wallet` is a persistent local wallet and payment tool for agents
 that purchase from x402 endpoints. It keeps private keys on the agent host,
-uses separate wallets for Base, Solana, and TRON, and emits owner-only payment
-artifacts for exact merchant requests.
+uses separate wallets for each network, and durably binds every authorization
+and submission to one exact merchant request.
 
-The launch path supports sponsored Base USDC and sponsored Solana USDC/USDT.
+The launch payer supports sponsored Base USDC and sponsored Solana USDC/USDT.
 The buyer signs token authority only; x402api supplies ETH/SOL and charges the
-merchant tenant's prepaid service credit. TRON is not an advertised launch rail.
+merchant tenant's prepaid service credit. A buyer does not need ETH or SOL.
+TRON wallet management remains available, but TRON payment authorization is
+coming soon and cannot be selected or used as a fallback.
 
-> **Status:** pre-release implementation. Do not fund wallets with more than
-> you are prepared for the agent host to spend or lose. Mainnet use is blocked
-> until the live release gates in the implementation plan are complete.
+Use a dedicated wallet and fund it only with the amount the agent is allowed to
+spend. A process that can unlock the wallet can spend its token balance.
 
 ## Packages
 
@@ -23,17 +24,24 @@ merchant tenant's prepaid service credit. TRON is not an advertised launch rail.
 
 ## Tenant installation
 
-Tenants that want an agent to use x402api payments install both parts: the
-version-pinned CLI on the agent host and the matching `skills/x402api-pay`
-directory in that agent runtime's skill location. The skill is the operating
-and safety contract; the CLI is the audited executable that holds keys and
-authorizes payments. Installing only the CLI does not teach an agent the
-funding, retry, refill-notification, or merchant-handoff workflow.
+Tenants install the version-pinned CLI, then install the matching bundled skill
+in their agent runtime. The skill is the operating and safety contract; the CLI
+is the executable that holds keys, authorizes payments, and safely submits or
+reconciles an exact credential-free request.
 
-Published installation commands will be added after the npm scope and release
-artifacts pass the gates in the implementation plan. During development, use
-this repository checkout and do not install executable code from an unpinned
-URL.
+```bash
+npm install --global @x402api/agent-wallet-cli@0.2.0
+x402api skill install --output "$CODEX_HOME/skills/x402api-pay" --json
+```
+
+Use the skill directory required by your agent runtime when it is not Codex.
+The install command never overwrites an existing directory.
+
+For a credential-free paid endpoint, `x402api pay` performs durable
+authorization and exact submission in one command. `payment authorize` and
+`payment submit` keep the two stages explicit for merchant-specific tools.
+Timeouts and asynchronous responses retain the same attempt and signature;
+they never create a replacement payment automatically.
 
 ## Refill notifications
 
@@ -62,9 +70,9 @@ artifact code.
 
 ## Wire compatibility
 
-V1 uses the deployed `com.k1hub...` payload-profile and extension literals.
-Those strings are signed wire identifiers, not package branding. They remain
-exact until the facilitator, merchant integrations, fixtures, and public
-documentation migrate together under a new version.
+The launch path requires the deployed `com.x402api.gas-sponsorship` extension
+and `com.x402api.x402.*-sponsored.v1` payload profiles. Lower-level historical
+buyer-funded/TRON protocol modules remain available for conformance and labs,
+but the public authorization workflow will not select them.
 
 Licensed under the MIT License.
