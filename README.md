@@ -30,7 +30,7 @@ is the executable that holds keys, authorizes payments, and safely submits or
 reconciles an exact credential-free request.
 
 ```bash
-npm install --global @x402api/agent-wallet-cli@0.2.0
+npm install --global @x402api/agent-wallet-cli@0.2.1
 x402api skill install --output "$CODEX_HOME/skills/x402api-pay" --json
 ```
 
