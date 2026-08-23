@@ -1,6 +1,6 @@
 # x402api Agent Wallet CLI and Skill Plan
 
-**Status:** 0.2.0 release candidate; registry publication remains release-gated
+**Status:** 0.2.1 release candidate; registry publication remains release-gated
 
 **Date:** 2026-08-19; launch amendment 2026-08-22
 
