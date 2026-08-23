@@ -21,6 +21,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
+      - run: npm run release:verify -- "${GITHUB_REF_NAME}"
       - run: npm run check
       - run: npm publish --workspace @x402api/agent-wallet-core --access public --provenance
       - run: npm publish --workspace @x402api/agent-wallet-cli --access public --provenance

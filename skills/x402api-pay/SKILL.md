@@ -1,6 +1,6 @@
 ---
 name: x402api-pay
-description: Use the x402api agent-wallet CLI to create, fund, inspect, back up, import, notify owners about, sweep, or retire persistent Base, Solana, and TRON wallets; authorize or submit exact x402 payments; handle 402 Payment Required responses; and resume or reconcile payment attempts. Use for initial purchases, renewals, low-balance refill requests, and any tenant workflow that pays an x402api merchant from a local agent wallet.
+description: Use the x402api agent-wallet CLI to create, fund, inspect, back up, import, notify owners about, sweep, or retire persistent wallets; authorize or submit sponsored Base USDC and Solana USDC/USDT x402 payments; handle 402 Payment Required responses; and safely resume or reconcile exact payment attempts. Use for initial purchases, renewals, low-balance refill requests, and any tenant workflow that pays an x402api merchant from a local agent wallet.
 ---
 
 # x402api Pay
@@ -18,6 +18,10 @@ conversation.
 4. Read [references/cli-reference.md](references/cli-reference.md) for commands,
    environment, result shapes, and stable errors.
 
+Install only the skill bundled with the exact CLI version. If it is not already
+installed, an operator can run `x402api skill install --output PATH --json`.
+The command refuses to overwrite an existing skill directory.
+
 Do not supply a passphrase on the command line. An operator must arrange
 `X402API_WALLET_PASSWORD_FILE` as an owner-only file or supervise
 `--password-stdin`. Never read, print, summarize, or paste that passphrase,
@@ -32,11 +36,14 @@ seed, private key, encrypted keystore, or complete payment signature.
    order is a renewal.
 4. Treat the funded balance as fully spendable by the autonomous agent, subject
    to any local per-payment ceiling.
-5. Show the public address, exact network, supported asset, native fee currency,
-   and requested funding amount when funding is insufficient. Never ask the
-   owner to reveal or import a personal seed.
+5. Show the public address, exact network, supported asset, sponsored native
+   fee currency, and requested token funding amount when funding is
+   insufficient. Never ask the owner to fund ETH/SOL or reveal or import a
+   personal seed.
 
-Keep Base, Solana, and TRON keys and addresses separate. Read
+Keep Base, Solana, and TRON keys and addresses separate. TRON wallet management
+does not mean TRON payment support: the launch payer must reject TRON as coming
+soon. Read
 [references/safety.md](references/safety.md) before backup, import, sweep,
 retirement, or any operation involving an unexpected challenge.
 
@@ -70,13 +77,17 @@ instructions to the human instead of sending email.
    the envelope.
 3. Verify the URL, method, exact body bytes, resource, network, asset, amount,
    recipient, profile, and challenge digest.
-4. Check the chosen wallet's asset balance. Check native-fee/resource balance
-   only when the selected requirement is not covered by the strict
-   `com.x402api.gas-sponsorship` extension.
+4. Require a launch-sponsored Base USDC or Solana USDC/USDT profile and the
+   strict `com.x402api.gas-sponsorship` extension. Check the chosen wallet's
+   token balance; never ask the buyer for ETH or SOL.
 5. Invoke `payment authorize` once for that request envelope and preserve its
    returned attempt ID and owner-only artifact path.
 6. Give the artifact path to the merchant-specific tool. Do not print or parse
    the complete payment signature into the conversation.
+7. For a credential-free paid endpoint, use `payment submit` with the same
+   attempt and request envelope, or use `pay` to authorize and submit in one
+   invocation. The CLI stores the response privately and returns only evidence
+   paths and public settlement metadata.
 
 Read [references/merchant-integration.md](references/merchant-integration.md)
 for the envelope, artifact handoff, notification-service boundary, and
@@ -86,17 +97,18 @@ submission rules.
 
 Distinguish these states:
 
-- funding: the wallet has usable asset balance and, only for a buyer-funded
-  profile, usable native fee balance;
+- funding: the wallet has usable USDC/USDT balance; x402api sponsors launch-rail
+  ETH/SOL from the merchant tenant's prepaid gas billing;
 - authorization: one durable payment artifact exists;
 - settlement: the payment is authoritative on the chosen rail;
 - fulfillment: the merchant returned the purchased result.
 
 On timeout, `202`, process restart, or conflicting evidence, look up the
-existing attempt. Reuse its exact artifact and buyer payment identifier. Never
-authorize the same request again merely because a submission result is
-unknown. Use the merchant's authoritative status adapter to reconcile; local
-abandonment does not revoke a signature or reverse settlement.
+existing attempt. Run `payment reconcile` with that attempt and the original
+request envelope, or use the merchant's authoritative status adapter. Reuse
+the exact artifact and buyer payment identifier. Never authorize the same
+request again merely because a submission result is unknown. Local abandonment
+does not revoke a signature or reverse settlement.
 
 Stop on unsupported profiles, changed request bytes, corrupt artifacts,
 expired challenges, unexpected recipients, or contradictory settlement data.

@@ -4,6 +4,7 @@ export * from "./notifications.js";
 export * from "./payment/attempt-store.js";
 export * from "./payment/authorize.js";
 export * from "./payment/contracts.js";
+export * from "./payment/submit.js";
 export * from "./protocol/base.js";
 export * from "./protocol/external-recipient.js";
 export * from "./protocol/http.js";

@@ -37,8 +37,7 @@ export type ExtensionDeclaration = {
 export const GAS_SPONSORSHIP_EXTENSION = "com.x402api.gas-sponsorship";
 const BASE_USDC_SPONSORED_PROFILE =
   "com.x402api.x402.base-usdc-eip3009-sponsored.v1";
-const SOLANA_SPONSORED_PROFILE =
-  "com.x402api.x402.solana-sponsored.v1";
+const SOLANA_SPONSORED_PROFILE = "com.x402api.x402.solana-sponsored.v1";
 
 export type PaymentPayload = {
   x402Version: 2;
@@ -48,12 +47,24 @@ export type PaymentPayload = {
   resource?: PaymentRequired["resource"];
 };
 
+export type PaymentResponse = {
+  success: boolean;
+  errorReason?: string;
+  errorMessage?: string;
+  payer?: string;
+  transaction: string;
+  network: string;
+  extensions?: JsonObject;
+  extra?: JsonObject;
+};
+
 const MAX_HEADER_BYTES = 64 * 1024;
 const MAX_SIGNATURE_BYTES = 512 * 1024;
 const DECIMAL = /^(?:0|[1-9][0-9]{0,77})$/;
 const CAIP2_NETWORK = /^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/;
 const PAYMENT_IDENTIFIER = /^[A-Za-z0-9_-]{16,128}$/;
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64 =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const PRINTABLE_ASCII = /^[\x20-\x7e]+$/;
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -100,7 +111,11 @@ export function canonicalJson(value: JsonValue): string {
 }
 
 function decodeBase64Json(value: string, maximumBytes: number): unknown {
-  if (value.length === 0 || value.length > maximumBytes || !BASE64.test(value)) {
+  if (
+    value.length === 0 ||
+    value.length > maximumBytes ||
+    !BASE64.test(value)
+  ) {
     throw new Error("x402 header is not canonical base64");
   }
   let bytes: Uint8Array;
@@ -229,13 +244,16 @@ function paymentPayloadExtensions(
     }
     assertJsonValue(declaration.info);
     if (declaration.schema !== undefined) assertJsonValue(declaration.schema);
-    if (name === GAS_SPONSORSHIP_EXTENSION) validateGasSponsorshipDeclaration(declaration);
+    if (name === GAS_SPONSORSHIP_EXTENSION)
+      validateGasSponsorshipDeclaration(declaration);
     extensions[name] = declaration as ExtensionDeclaration;
   }
   return extensions;
 }
 
-function validateGasSponsorshipDeclaration(declaration: Record<string, unknown>): void {
+function validateGasSponsorshipDeclaration(
+  declaration: Record<string, unknown>,
+): void {
   const info = declaration.info;
   const schema = declaration.schema;
   const infoKeys = [
@@ -282,7 +300,8 @@ function validateGasSponsorshipDeclaration(declaration: Record<string, unknown>)
       throw new Error("gas-sponsorship requirement is malformed");
     }
     const identity = `${item.network}|${item.asset.toLowerCase()}|${item.payloadProfile}`;
-    if (identities.has(identity)) throw new Error("gas-sponsorship requirement is duplicated");
+    if (identities.has(identity))
+      throw new Error("gas-sponsorship requirement is duplicated");
     identities.add(identity);
   }
   if (
@@ -336,7 +355,8 @@ export function decodePaymentRequiredHeader(value: string): PaymentRequired {
       }
       assertJsonValue(declaration.info);
       if (declaration.schema !== undefined) assertJsonValue(declaration.schema);
-      if (name === GAS_SPONSORSHIP_EXTENSION) validateGasSponsorshipDeclaration(declaration);
+      if (name === GAS_SPONSORSHIP_EXTENSION)
+        validateGasSponsorshipDeclaration(declaration);
       extensions[name] = declaration as ExtensionDeclaration;
     }
   }
@@ -370,7 +390,8 @@ export function createPaymentPayload(options: {
   schemePayload: JsonObject;
   paymentIdentifier?: string;
 }): PaymentPayload {
-  const { paymentRequired, accepted, schemePayload, paymentIdentifier } = options;
+  const { paymentRequired, accepted, schemePayload, paymentIdentifier } =
+    options;
   const advertised = paymentRequired.accepts.some(
     (candidate) =>
       canonicalJson(candidate as unknown as JsonObject) ===
@@ -433,4 +454,39 @@ export function decodePaymentSignature(value: string): PaymentPayload {
       ? {}
       : { resource: resource(parsed.resource) }),
   };
+}
+
+export function decodePaymentResponseHeader(value: string): PaymentResponse {
+  const parsed = decodeBase64Json(value, MAX_HEADER_BYTES);
+  if (!isObject(parsed)) {
+    throw new Error("PAYMENT-RESPONSE is not an object");
+  }
+  const allowed = new Set([
+    "success",
+    "errorReason",
+    "errorMessage",
+    "payer",
+    "transaction",
+    "network",
+    "extensions",
+    "extra",
+  ]);
+  if (Object.keys(parsed).some((key) => !allowed.has(key))) {
+    throw new Error("PAYMENT-RESPONSE has unknown fields");
+  }
+  if (
+    typeof parsed.success !== "boolean" ||
+    typeof parsed.transaction !== "string" ||
+    typeof parsed.network !== "string" ||
+    !optionalString(parsed.errorReason) ||
+    !optionalString(parsed.errorMessage) ||
+    !optionalString(parsed.payer) ||
+    (parsed.extensions !== undefined && !isObject(parsed.extensions)) ||
+    (parsed.extra !== undefined && !isObject(parsed.extra))
+  ) {
+    throw new Error("PAYMENT-RESPONSE is malformed");
+  }
+  if (parsed.extensions !== undefined) assertJsonValue(parsed.extensions);
+  if (parsed.extra !== undefined) assertJsonValue(parsed.extra);
+  return parsed as PaymentResponse;
 }

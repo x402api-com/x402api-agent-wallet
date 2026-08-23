@@ -7,9 +7,9 @@ balance is the economic permission granted to the agent and may be spent at
 different compatible x402 merchants. Preserve separate keys and addresses for
 Base, Solana, and TRON.
 
-Show the exact network, token contract or mint, public address, requested asset
-amount, and native fee requirement before funding. A correct address on the
-wrong network is not valid funding.
+Show the exact network, token contract or mint, public address, and requested
+asset amount before funding. A correct address on the wrong network is not
+valid funding. Buyers do not fund ETH or SOL for launch-sponsored payments.
 
 For sponsored Base and Solana requirements, require the strict gas-sponsorship
 extension and preserve its exact requirement binding. A sponsored payment must

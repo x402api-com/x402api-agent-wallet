@@ -4,6 +4,7 @@ import {
   canonicalJson,
   createPaymentPayload,
   decodePaymentRequiredHeader,
+  decodePaymentResponseHeader,
   decodePaymentSignature,
   encodePaymentRequiredHeader,
   encodePaymentSignature,
@@ -62,7 +63,9 @@ describe("x402 HTTP codec", () => {
   it("rejects encoded headers over 64 KiB", () => {
     const oversized = structuredClone(required);
     oversized.resource.description = "x".repeat(64 * 1024);
-    expect(() => encodePaymentRequiredHeader(oversized)).toThrow(/maximum size/);
+    expect(() => encodePaymentRequiredHeader(oversized)).toThrow(
+      /maximum size/,
+    );
     expect(() =>
       decodePaymentRequiredHeader("A".repeat(64 * 1024 + 1)),
     ).toThrow(/base64|maximum size/);
@@ -153,6 +156,37 @@ describe("x402 HTTP codec", () => {
         Buffer.from(JSON.stringify(malformed), "utf8").toString("base64"),
       ),
     ).toThrow(/requirement/);
+  });
+
+  it("strictly decodes PAYMENT-RESPONSE settlement evidence", () => {
+    const response = {
+      success: true,
+      payer: "0x2222222222222222222222222222222222222222",
+      transaction: "0xabc",
+      network: "eip155:8453",
+      extensions: { "payment-identifier": { id: "buyer_0123456789abcdef" } },
+    };
+    expect(
+      decodePaymentResponseHeader(
+        Buffer.from(JSON.stringify(response), "utf8").toString("base64"),
+      ),
+    ).toEqual(response);
+    expect(() =>
+      decodePaymentResponseHeader(
+        Buffer.from(
+          JSON.stringify({ ...response, unexpected: true }),
+          "utf8",
+        ).toString("base64"),
+      ),
+    ).toThrow(/unknown fields/);
+    expect(() =>
+      decodePaymentResponseHeader(
+        Buffer.from(
+          JSON.stringify({ ...response, success: "true" }),
+          "utf8",
+        ).toString("base64"),
+      ),
+    ).toThrow(/malformed/);
   });
 
   it("uses cross-runtime canonical sorted JSON", () => {

@@ -22,8 +22,7 @@ export const SOLANA_MEMO_PROGRAM =
   "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 export const SOLANA_USDT_BUYER_FUNDED_PROFILE =
   "com.k1hub.x402.solana-buyer-funded.v1";
-export const SOLANA_SPONSORED_PROFILE =
-  "com.x402api.x402.solana-sponsored.v1";
+export const SOLANA_SPONSORED_PROFILE = "com.x402api.x402.solana-sponsored.v1";
 
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const BASE58_INDEX = new Map(
@@ -339,19 +338,16 @@ function validateSponsoredRequirement(accepted: PaymentRequirement): void {
     typeof accepted.extra.memo !== "string" ||
     !MEMO.test(accepted.extra.memo)
   ) {
-    throw new Error("requirement is not sponsored native Solana USDC or USDT exact");
+    throw new Error(
+      "requirement is not sponsored native Solana USDC or USDT exact",
+    );
   }
   decodeSolanaBase58(accepted.asset);
   decodeSolanaBase58(accepted.payTo);
   decodeSolanaBase58(accepted.extra.feePayer);
 }
 
-/**
- * Build the dormant tenant-sponsored Solana transaction profile.
- *
- * @deprecated V1 uses `buildBuyerFundedSolanaUsdtTransaction`. This helper is
- * retained only for managed-wallet regression and the isolated payment lab.
- */
+/** Build the launch-sponsored Solana USDC/USDT transaction profile. */
 export async function buildSolanaUsdtTransaction(options: {
   accepted: PaymentRequirement;
   payer: string;
@@ -578,7 +574,9 @@ function verifyBuyerFundedWalletTransaction(options: {
   }
 }
 
-export class ConnectedSolanaWalletRpcTransport implements SolanaWalletTransport {
+export class ConnectedSolanaWalletRpcTransport
+  implements SolanaWalletTransport
+{
   constructor(
     private readonly provider: SolanaWalletRpcProvider,
     private readonly account: () => Promise<string>,

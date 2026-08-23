@@ -1,5 +1,14 @@
-import { lstat, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+} from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   AgentWalletError,
@@ -15,6 +24,7 @@ import {
   readWalletMetadata,
   requestRefillNotification,
   retireWallet,
+  submitAuthorizedPayment,
   walletPaths,
   type RpcConfiguration,
   type RefillReason,
@@ -48,10 +58,13 @@ const HELP = {
     "wallet retire --wallet <name> --confirm <name>",
     "wallet sweep --wallet <name> --to <address>",
     "payment authorize --wallet <name> --request-envelope <file> --artifact-out <file>",
+    "payment submit --attempt <id> --request-envelope <file>",
     "payment status --attempt <id>",
     "payment artifact --attempt <id> --output <file>",
     "payment abandon --attempt <id>",
-    "payment reconcile --attempt <id>",
+    "payment reconcile --attempt <id> --request-envelope <file>",
+    "pay --wallet <name> --request-envelope <file> --artifact-out <file>",
+    "skill install --output <directory>",
   ],
   passwordSources: ["--password-stdin", "X402API_WALLET_PASSWORD_FILE"],
   rpcEnvironment: [
@@ -74,8 +87,15 @@ function parseArguments(args: string[]): ParsedArguments {
       continue;
     }
     const name = value.slice(2);
-    if (!/^[a-z][a-z0-9-]*$/.test(name) || values.has(name) || flags.has(name)) {
-      throw new AgentWalletError("invalid_input", `invalid or duplicate option: ${value}`);
+    if (
+      !/^[a-z][a-z0-9-]*$/.test(name) ||
+      values.has(name) ||
+      flags.has(name)
+    ) {
+      throw new AgentWalletError(
+        "invalid_input",
+        `invalid or duplicate option: ${value}`,
+      );
     }
     if (booleanFlags.has(name)) {
       flags.add(name);
@@ -83,7 +103,10 @@ function parseArguments(args: string[]): ParsedArguments {
     }
     const optionValue = args[index + 1];
     if (optionValue === undefined || optionValue.startsWith("--")) {
-      throw new AgentWalletError("invalid_input", `option requires a value: ${value}`);
+      throw new AgentWalletError(
+        "invalid_input",
+        `option requires a value: ${value}`,
+      );
     }
     values.set(name, optionValue);
     index += 1;
@@ -120,7 +143,10 @@ async function readPasswordFile(path: string): Promise<string> {
   const absolute = resolve(path);
   const stat = await lstat(absolute).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") {
-      throw new AgentWalletError("password_required", "wallet password file was not found");
+      throw new AgentWalletError(
+        "password_required",
+        "wallet password file was not found",
+      );
     }
     throw error;
   });
@@ -143,7 +169,10 @@ async function readPasswordFile(path: string): Promise<string> {
 function normalizePassphrase(value: string): string {
   const normalized = value.replace(/\r?\n$/, "");
   if (normalized.includes("\n") || normalized.includes("\r")) {
-    throw new AgentWalletError("password_required", "wallet passphrase must be one line");
+    throw new AgentWalletError(
+      "password_required",
+      "wallet passphrase must be one line",
+    );
   }
   return normalized;
 }
@@ -160,8 +189,10 @@ async function passphrase(
       "configure exactly one wallet password source",
     );
   }
-  if (parsed.flags.has("password-stdin")) return normalizePassphrase(await io.readStdin());
-  if (passwordFile) return normalizePassphrase(await readPasswordFile(passwordFile));
+  if (parsed.flags.has("password-stdin"))
+    return normalizePassphrase(await io.readStdin());
+  if (passwordFile)
+    return normalizePassphrase(await readPasswordFile(passwordFile));
   throw new AgentWalletError(
     "password_required",
     "use --password-stdin or X402API_WALLET_PASSWORD_FILE",
@@ -182,7 +213,9 @@ function rpcConfiguration(environment: NodeJS.ProcessEnv): RpcConfiguration {
   };
 }
 
-function publicWallet(metadata: Awaited<ReturnType<typeof readWalletMetadata>>) {
+function publicWallet(
+  metadata: Awaited<ReturnType<typeof readWalletMetadata>>,
+) {
   return {
     version: metadata.version,
     wallet: metadata.name,
@@ -192,8 +225,59 @@ function publicWallet(metadata: Awaited<ReturnType<typeof readWalletMetadata>>) 
     ...(metadata.maximumPaymentAtomic === undefined
       ? {}
       : { maximumPaymentAtomic: metadata.maximumPaymentAtomic }),
-    ...(metadata.retiredAt === undefined ? {} : { retiredAt: metadata.retiredAt }),
+    ...(metadata.retiredAt === undefined
+      ? {}
+      : { retiredAt: metadata.retiredAt }),
   };
+}
+
+async function skillSourceDirectory(): Promise<string> {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(moduleDirectory, "../skill"),
+    resolve(moduleDirectory, "../../../skills/x402api-pay"),
+  ];
+  for (const candidate of candidates) {
+    const stat = await lstat(join(candidate, "SKILL.md")).catch(
+      () => undefined,
+    );
+    if (stat?.isFile() && !stat.isSymbolicLink()) return candidate;
+  }
+  throw new AgentWalletError(
+    "operation_not_supported",
+    "the x402api-pay skill is missing from this CLI installation",
+  );
+}
+
+async function installSkill(output: string): Promise<string> {
+  const destination = resolve(output);
+  const existing = await lstat(destination).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    },
+  );
+  if (existing !== undefined) {
+    throw new AgentWalletError(
+      "invalid_input",
+      "skill output already exists; choose a new directory or remove it explicitly",
+    );
+  }
+  const parent = dirname(destination);
+  await mkdir(parent, { recursive: true });
+  const staging = await mkdtemp(join(parent, ".x402api-pay-"));
+  try {
+    const stagedSkill = join(staging, "x402api-pay");
+    await cp(await skillSourceDirectory(), stagedSkill, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+    });
+    await rename(stagedSkill, destination);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+  return destination;
 }
 
 async function dispatch(
@@ -206,12 +290,21 @@ async function dispatch(
     rejectUnknown(parsed, [], ["json"]);
     return HELP;
   }
+  if (group === "skill" && action === "install") {
+    rejectUnknown(parsed, ["output"]);
+    return {
+      version: 1,
+      status: "installed",
+      skillPath: await installSkill(required(parsed, "output")),
+    };
+  }
   const paths = walletPaths(defaultDataRoot(environment));
   if (group === "wallet" && action === "create") {
-    rejectUnknown(parsed, ["name", "network", "maximum-payment-atomic"], [
-      "json",
-      "password-stdin",
-    ]);
+    rejectUnknown(
+      parsed,
+      ["name", "network", "maximum-payment-atomic"],
+      ["json", "password-stdin"],
+    );
     const network = required(parsed, "network") as SupportedNetwork;
     const metadata = await createWallet({
       walletsDirectory: paths.wallets,
@@ -230,15 +323,23 @@ async function dispatch(
   }
   if (group === "wallet" && action === "list") {
     rejectUnknown(parsed, []);
-    return { version: 1, wallets: (await listWallets(paths.wallets)).map(publicWallet) };
+    return {
+      version: 1,
+      wallets: (await listWallets(paths.wallets)).map(publicWallet),
+    };
   }
   if (group === "wallet" && ["show", "address"].includes(action ?? "")) {
     rejectUnknown(parsed, ["wallet"]);
-    return publicWallet(await readWalletMetadata(paths.wallets, required(parsed, "wallet")));
+    return publicWallet(
+      await readWalletMetadata(paths.wallets, required(parsed, "wallet")),
+    );
   }
   if (group === "wallet" && action === "balance") {
     rejectUnknown(parsed, ["wallet"]);
-    const metadata = await readWalletMetadata(paths.wallets, required(parsed, "wallet"));
+    const metadata = await readWalletMetadata(
+      paths.wallets,
+      required(parsed, "wallet"),
+    );
     return readWalletBalance({
       network: metadata.network,
       address: metadata.address,
@@ -248,7 +349,13 @@ async function dispatch(
   if (group === "wallet" && action === "notify-refill") {
     rejectUnknown(
       parsed,
-      ["wallet", "subscription-reference", "renew-by", "target-balance-atomic", "reason"],
+      [
+        "wallet",
+        "subscription-reference",
+        "renew-by",
+        "target-balance-atomic",
+        "reason",
+      ],
       ["json", "password-stdin"],
     );
     const notificationUrl = environment.X402API_NOTIFICATION_URL;
@@ -277,7 +384,11 @@ async function dispatch(
       name: required(parsed, "wallet"),
       output: required(parsed, "output"),
     });
-    return { version: 1, wallet: required(parsed, "wallet"), backupPath: output };
+    return {
+      version: 1,
+      wallet: required(parsed, "wallet"),
+      backupPath: output,
+    };
   }
   if (group === "wallet" && action === "import") {
     rejectUnknown(parsed, ["name", "input"], ["json", "password-stdin"]);
@@ -292,7 +403,9 @@ async function dispatch(
   if (group === "wallet" && action === "retire") {
     rejectUnknown(parsed, ["wallet", "confirm"], ["json", "password-stdin"]);
     const wallet = required(parsed, "wallet");
-    const active = await new AttemptStore(paths.attempts).activeForWallet(wallet);
+    const active = await new AttemptStore(paths.attempts).activeForWallet(
+      wallet,
+    );
     if (active.length > 0) {
       throw new AgentWalletError(
         "attempt_ambiguous",
@@ -335,6 +448,14 @@ async function dispatch(
     rejectUnknown(parsed, ["attempt"]);
     return new AttemptStore(paths.attempts).get(required(parsed, "attempt"));
   }
+  if (group === "payment" && (action === "submit" || action === "reconcile")) {
+    rejectUnknown(parsed, ["attempt", "request-envelope"]);
+    return submitAuthorizedPayment({
+      attemptsDirectory: paths.attempts,
+      attemptId: required(parsed, "attempt"),
+      requestEnvelopePath: required(parsed, "request-envelope"),
+    });
+  }
   if (group === "payment" && action === "artifact") {
     rejectUnknown(parsed, ["attempt", "output"]);
     const attempt = required(parsed, "attempt");
@@ -348,32 +469,36 @@ async function dispatch(
     rejectUnknown(parsed, ["attempt"]);
     const attempt = required(parsed, "attempt");
     const store = new AttemptStore(paths.attempts);
-    const current = await store.get(attempt);
-    if (["settled", "fulfilled", "terminal_failed"].includes(current.state)) {
-      throw new AgentWalletError("invalid_input", `cannot abandon attempt in ${current.state}`);
-    }
-    const record = await store.updateState(attempt, "abandoned_local");
+    const record = await store.abandon(attempt);
     return {
       version: 1,
       attemptId: attempt,
       state: record.state,
-      warning: "Local abandonment cannot reverse an authorization or settlement.",
+      warning:
+        "Local abandonment cannot reverse an authorization or settlement.",
     };
   }
-  if (group === "payment" && action === "reconcile") {
-    rejectUnknown(parsed, ["attempt"]);
-    const record = await new AttemptStore(paths.attempts).get(required(parsed, "attempt"));
-    throw new AgentWalletError(
-      "attempt_ambiguous",
-      "reconciliation requires the merchant's authoritative status adapter; reuse the exact artifact",
-      { details: { attemptId: record.attemptId, state: record.state } },
-    );
-  }
   if (group === "pay") {
-    throw new AgentWalletError(
-      "operation_not_supported",
-      "full payer mode is deferred until signer-only conformance is complete",
+    rejectUnknown(
+      parsed,
+      ["wallet", "request-envelope", "artifact-out"],
+      ["json", "password-stdin"],
     );
+    const requestEnvelopePath = required(parsed, "request-envelope");
+    const authorization = await authorizePayment({
+      walletsDirectory: paths.wallets,
+      attemptsDirectory: paths.attempts,
+      wallet: required(parsed, "wallet"),
+      passphrase: await passphrase(parsed, io, environment),
+      requestEnvelopePath,
+      artifactPath: required(parsed, "artifact-out"),
+      rpc: rpcConfiguration(environment),
+    });
+    return submitAuthorizedPayment({
+      attemptsDirectory: paths.attempts,
+      attemptId: authorization.attemptId,
+      requestEnvelopePath,
+    });
   }
   throw new AgentWalletError("invalid_input", "unknown x402api command");
 }
@@ -385,29 +510,37 @@ export async function runCli(
     environment?: NodeJS.ProcessEnv;
   } = {},
 ): Promise<number> {
-  const io: Io =
-    options.io ??
-    {
-      stdout: (value) => process.stdout.write(value),
-      stderr: (value) => process.stderr.write(value),
-      readStdin: async () => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of process.stdin) {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-          if (chunks.reduce((size, item) => size + item.length, 0) > 4096) {
-            throw new AgentWalletError("password_required", "wallet passphrase input is too large");
-          }
+  const io: Io = options.io ?? {
+    stdout: (value) => process.stdout.write(value),
+    stderr: (value) => process.stderr.write(value),
+    readStdin: async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of process.stdin) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        if (chunks.reduce((size, item) => size + item.length, 0) > 4096) {
+          throw new AgentWalletError(
+            "password_required",
+            "wallet passphrase input is too large",
+          );
         }
-        return Buffer.concat(chunks).toString("utf8");
-      },
-    };
+      }
+      return Buffer.concat(chunks).toString("utf8");
+    },
+  };
   let parsed: ParsedArguments | undefined;
   try {
     parsed = parseArguments(args);
     if (!parsed.flags.has("json")) {
-      throw new AgentWalletError("invalid_input", "--json is required for the V1 CLI contract");
+      throw new AgentWalletError(
+        "invalid_input",
+        "--json is required for the V1 CLI contract",
+      );
     }
-    const result = await dispatch(parsed, io, options.environment ?? process.env);
+    const result = await dispatch(
+      parsed,
+      io,
+      options.environment ?? process.env,
+    );
     io.stdout(`${JSON.stringify(result)}\n`);
     return 0;
   } catch (error) {
@@ -418,7 +551,9 @@ export async function runCli(
         code: normalized.code,
         message: normalized.message,
         retryable: normalized.retryable,
-        ...(normalized.details === undefined ? {} : { details: normalized.details }),
+        ...(normalized.details === undefined
+          ? {}
+          : { details: normalized.details }),
       },
     };
     if (parsed?.flags.has("json") ?? args.includes("--json")) {

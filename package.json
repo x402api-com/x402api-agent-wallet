@@ -1,6 +1,6 @@
 {
   "name": "x402api-agent-wallet-workspace",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Persistent local agent wallet CLI and skill for x402 payments.",
   "license": "MIT",
@@ -18,6 +18,7 @@
     "test:coverage": "npm run build --workspace @x402api/agent-wallet-core && npm run test:coverage --workspaces --if-present",
     "lint": "npm run build --workspace @x402api/agent-wallet-core && npm run lint --workspaces --if-present && node tools/validate-repository.mjs",
     "pack:smoke": "node tools/pack-smoke.mjs",
+    "release:verify": "node tools/verify-release-version.mjs",
     "validate:skill": "node tools/validate-skill.mjs skills/x402api-pay",
     "check": "npm run lint && npm run typecheck && npm test && npm run build && npm run validate:skill && npm run pack:smoke"
   },
