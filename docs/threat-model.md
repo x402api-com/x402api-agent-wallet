@@ -12,6 +12,8 @@
 
 - The owner chooses a dedicated wallet balance as the maximum economic
   exposure.
+- An optional `maximumPaymentAtomic` value limits each payment only; it is not
+  an aggregate, daily, merchant-specific, or revocation policy.
 - The local host and any process allowed to invoke an unlocked CLI are trusted
   to spend that balance.
 - Merchant responses, x402 challenges, RPC responses, skill prompts, and
@@ -20,6 +22,8 @@
   names, and product labels are trusted only when loaded from verified x402api
   subscription records.
 - x402api hosted services never receive private keys or unlock material.
+- The CLI runs on the buyer or agent host. Merchant integrations such as
+  WarpMetal do not host the wallet process or become its key boundary.
 
 ## Required controls
 

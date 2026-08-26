@@ -21,5 +21,7 @@ fixture, log, or support message.
 
 ## Supported versions
 
-No production-supported version exists until the release checklist and capped
-mainnet evidence in the implementation plan are complete.
+Version 0.2.2 is publicly released with npm provenance, but no version is yet
+production-supported for uncapped mainnet use. Production support remains
+gated on the release checklist and capped mainnet evidence in the
+implementation plan.

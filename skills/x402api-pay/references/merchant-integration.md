@@ -47,8 +47,11 @@ never downgraded by a later transport or replay failure.
 
 ## Hosted refill endpoint
 
-The CLI posts a signed envelope to `X402API_NOTIFICATION_URL`. The signed
-intent includes:
+The shipped CLI client posts a signed envelope to
+`X402API_NOTIFICATION_URL`. This repository does not implement or deploy that
+hosted endpoint. An approved server implementing the separate contract must be
+available before a notification workflow is advertised. The signed intent
+includes:
 
 - a domain-separated V1 kind and exact endpoint audience;
 - the subscription reference;

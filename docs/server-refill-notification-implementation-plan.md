@@ -1,6 +1,10 @@
 # x402api server refill-notification implementation plan
 
-**Status:** Ready for hosted-platform implementation
+**Status:** Design ready; hosted endpoint not implemented by this repository
+
+**Client status:** The 0.2.2 CLI emits the signed request described here. An
+operator must not configure or advertise notification delivery until the
+hosted platform completes this plan and deploys an approved endpoint.
 
 **Client contract:** `docs/refill-notification-contract.md`
 

@@ -1,0 +1,47 @@
+# x402api Agent Wallet
+
+> Open-source persistent local agent-wallet CLI and portable skill for exact x402 payments. Version 0.2.2 authorizes only sponsored Base USDC and sponsored Solana USDC/USDT payments.
+
+The `x402api` CLI runs on the buyer or agent host and keeps encrypted private
+keys there. It is not hosted by or running inside WarpMetal; WarpMetal is a
+separate merchant and reference integration.
+
+The funded token balance is the wallet's primary spend permission. The optional
+`--maximum-payment-atomic` setting adds a per-payment ceiling; it is not a
+daily, cumulative, or merchant-specific policy. For launch payments, x402api
+supplies ETH or SOL and charges the merchant tenant's prepaid gas credit. The
+buyer must never be asked to fund native gas or fall back to buyer-funded gas.
+
+TRON wallet management and low-level conformance code are included, but TRON
+payment authorization is not supported by the public payer. The refill client
+contract is shipped; the hosted refill-notification service is a separate,
+not-yet-complete platform rollout. Production mainnet support remains subject
+to the gates in the security policy.
+
+## Start here
+
+- [Project README](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/README.md): Installation, release status, spend permissions, supported rails, and runtime boundaries.
+- [CLI reference](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/skills/x402api-pay/references/cli-reference.md): Commands, environment variables, results, and stable error routing.
+- [Agent skill](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/skills/x402api-pay/SKILL.md): Canonical operating workflow for skill-aware agents.
+
+## Payment and security
+
+- [Safety rules](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/skills/x402api-pay/references/safety.md): Funding authority, local ceilings, secrets, hostile input, backup, and retirement.
+- [Merchant integration](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/skills/x402api-pay/references/merchant-integration.md): Exact request envelopes, artifact handoff, submission, and reconciliation.
+- [Threat model](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/docs/threat-model.md): Trust boundaries, controls, residual risks, and non-goals.
+- [Security policy](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/SECURITY.md): Vulnerability reporting and supported-version status.
+- [Source provenance](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/docs/source-provenance.md): Extracted protocol sources and post-extraction synchronization record.
+
+## Packages
+
+- [CLI package README](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/packages/agent-wallet-cli/README.md): The `@x402api/agent-wallet-cli` package and bundled skill.
+- [Core package README](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/packages/agent-wallet-core/README.md): The `@x402api/agent-wallet-core` security boundary.
+- [npm CLI package metadata](https://registry.npmjs.org/@x402api%2fagent-wallet-cli/latest): Published CLI version, tarball integrity, and provenance metadata.
+- [npm core package metadata](https://registry.npmjs.org/@x402api%2fagent-wallet-core/latest): Published core-library version, tarball integrity, and provenance metadata.
+
+## Optional
+
+- [Refill notification contract](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/docs/refill-notification-contract.md): Shipped client contract and required hosted-service behavior.
+- [Hosted refill implementation plan](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/docs/server-refill-notification-implementation-plan.md): Unimplemented server-side rollout plan.
+- [CLI and skill design record](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/docs/agent-wallet-cli-and-skill-plan.md): Historical phased design with the current 0.2.2 implementation snapshot.
+- [Contributing](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/CONTRIBUTING.md): Change requirements and repository checks.

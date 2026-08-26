@@ -11,15 +11,22 @@ email address.
 x402api wallet notify-refill \
   --wallet codex-base \
   --subscription-reference subscription_123 \
-  --renew-by 2026-08-25T12:00:00.000Z \
+  --renew-by "$RENEW_BY_UTC" \
   --target-balance-atomic 2000000 \
   --reason renewal \
   --json
 ```
 
+Set `RENEW_BY_UTC` to the authoritative future renewal deadline in canonical
+RFC 3339 UTC form.
+
 The matching network RPC and `X402API_NOTIFICATION_URL` must be configured.
 The command checks the live balance first. If the target is already met it
 returns `not_required` and makes no notification request.
+
+The client command and wire contract are shipped in 0.2.2. This repository does
+not implement or deploy the hosted endpoint. Configure the URL only for an
+approved x402api platform deployment that satisfies the requirements below.
 
 ## Signed request
 
