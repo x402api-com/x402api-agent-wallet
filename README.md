@@ -11,8 +11,42 @@ merchant tenant's prepaid service credit. A buyer does not need ETH or SOL.
 TRON wallet management remains available, but TRON payment authorization is
 coming soon and cannot be selected or used as a fallback.
 
+> **Release status:** `0.2.2` is published on npm with provenance. Production
+> mainnet support remains gated by the capped live evidence and release review
+> described in [SECURITY.md](SECURITY.md).
+
+## Permissions and spend boundary
+
 Use a dedicated wallet and fund it only with the amount the agent is allowed to
-spend. A process that can unlock the wallet can spend its token balance.
+spend. A process that can unlock the wallet can spend its token balance. The
+optional wallet-creation flag `--maximum-payment-atomic` adds a local
+per-payment ceiling:
+
+```bash
+x402api wallet create \
+  --name agent-base \
+  --network eip155:8453 \
+  --maximum-payment-atomic 1000000 \
+  --json
+```
+
+The value is canonical atomic units for the supported payment asset. It is a
+per-payment limit, not a daily or cumulative budget, merchant allowlist, or
+hosted policy. Version 0.2.2 has no policy-update command; the ceiling is set
+when the wallet is created. Owner-only directories (`0700`) and files (`0600`)
+protect stored material from accidental local exposure, but they do not make a
+compromised same-user host safe.
+
+## Runtime and sponsored-fee boundary
+
+The CLI runs on the buyer or agent host and keeps wallet keys there. It is not
+hosted by or running inside WarpMetal. WarpMetal is a separate merchant and
+reference integration that can hand an exact payment request to the local CLI.
+
+For an admitted sponsored profile, x402api reserves and supplies the Base or
+Solana native network fee and charges the merchant tenant's prepaid gas credit.
+The wallet enforces the exact gas-sponsorship declaration and never falls back
+to buyer-funded ETH or SOL.
 
 ## Packages
 
@@ -30,7 +64,7 @@ is the executable that holds keys, authorizes payments, and safely submits or
 reconciles an exact credential-free request.
 
 ```bash
-npm install --global @x402api/agent-wallet-cli@0.2.1
+npm install --global @x402api/agent-wallet-cli@0.2.2
 x402api skill install --output "$CODEX_HOME/skills/x402api-pay" --json
 ```
 
@@ -52,6 +86,25 @@ name, or product label. x402api verifies the wallet/subscription relationship
 and renders the email from canonical server-side tenant and product records.
 See [the notification contract](docs/refill-notification-contract.md) and
 [the hosted-server implementation plan](docs/server-refill-notification-implementation-plan.md).
+
+The signed client command and contract ship in 0.2.2. The hosted endpoint is a
+separate platform implementation and is not provided by this repository; do
+not assume notification delivery is available unless an approved
+`X402API_NOTIFICATION_URL` has been deployed and configured.
+
+## Documentation
+
+- [`llms.txt`](llms.txt) is the concise machine-readable documentation map.
+- [CLI reference](skills/x402api-pay/references/cli-reference.md) lists the
+  supported commands, environment, and error-routing contract.
+- [Safety rules](skills/x402api-pay/references/safety.md) define funding,
+  permissions, and secret-handling requirements.
+- [Merchant integration](skills/x402api-pay/references/merchant-integration.md)
+  defines exact request, artifact, retry, and reconciliation behavior.
+- [Threat model](docs/threat-model.md) records trust boundaries and residual
+  risks.
+- [Source provenance](docs/source-provenance.md) records extracted code and the
+  latest cross-repository synchronization audit.
 
 ## Development
 

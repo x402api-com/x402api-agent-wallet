@@ -7,6 +7,11 @@ balance is the economic permission granted to the agent and may be spent at
 different compatible x402 merchants. Preserve separate keys and addresses for
 Base, Solana, and TRON.
 
+An optional `maximumPaymentAtomic` value adds a local ceiling to each payment.
+It does not limit aggregate or daily spend, restrict merchants, revoke existing
+artifacts, or protect a wallet on a compromised same-user host. Version 0.2.2
+sets this value only when creating a wallet and has no policy-update command.
+
 Show the exact network, token contract or mint, public address, and requested
 asset amount before funding. A correct address on the wrong network is not
 valid funding. Buyers do not fund ETH or SOL for launch-sponsored payments.

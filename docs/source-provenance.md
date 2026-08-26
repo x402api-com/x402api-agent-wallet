@@ -33,3 +33,19 @@ Keystore, filesystem, balance, RPC-network identity, attempt, notification,
 authorization orchestration, CLI, skill, packaging, and release code was
 implemented in this public repository rather than copied from private hosted
 services.
+
+## Post-extraction synchronization
+
+Last reviewed on 2026-08-26 against the hosted-platform `origin/main` at
+`aef664b`:
+
+| Hosted or public change | Public agent-wallet result |
+| --- | --- |
+| Sponsored Base/Solana profiles and strict gas-sponsorship declaration | Implemented and tested in public [PR #7](https://github.com/x402api-com/x402api-agent-wallet/pull/7), then released with durable submission and reconciliation in [PR #8](https://github.com/x402api-com/x402api-agent-wallet/pull/8) / versions 0.2.0 through 0.2.2. |
+| Hosted-platform commit `79b98ee` (`Add always-on sponsored gas payment rails`) | The buyer-side wire and signing behavior is represented by the public sponsored profiles and conformance tests. Hosted treasury, deployment, and merchant billing code remains private platform code and is intentionally not copied here. |
+| Hosted-platform commit `dbd7f07` (`Fix dashboard permission selection`) | No port is required. It changes tenant-dashboard API-client and team-role form state only and does not touch any file in the extraction inventory or the local wallet permission model. |
+
+The public repository is canonical for agent-wallet behavior after extraction.
+Future changes to mapped protocol files require an explicit compatibility and
+conformance review; unrelated hosted UI, deployment, custody, or tenant-policy
+changes must not be copied into this package.

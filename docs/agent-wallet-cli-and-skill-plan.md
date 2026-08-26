@@ -1,8 +1,10 @@
 # x402api Agent Wallet CLI and Skill Plan
 
-**Status:** 0.2.1 release candidate; registry publication remains release-gated
+**Status:** Historical design record with a current 0.2.2 implementation
+snapshot; 0.2.2 is published on npm, while production mainnet support remains
+release-gated
 
-**Date:** 2026-08-19; launch amendment 2026-08-22
+**Date:** 2026-08-19; launch amendment 2026-08-22; status verified 2026-08-26
 
 **Scope:** Open-source persistent agent wallet CLI, portable agent skill, and
 merchant integration contract
@@ -15,6 +17,38 @@ merchant integration contract
 
 **Implementation baseline:** public agent-wallet protocol code extracted from
 the private hosted-platform packages listed in `source-provenance.md`
+
+## Current 0.2.2 implementation snapshot
+
+This file began as the phased design record. The implementation has moved
+ahead of several original phase descriptions, so this snapshot governs when a
+later section conflicts with current behavior:
+
+- `@x402api/agent-wallet-core` and `@x402api/agent-wallet-cli` 0.2.2 are
+  published on npm with provenance from this public repository.
+- The public payer authorizes only sponsored Base USDC and sponsored Solana
+  USDC/USDT. It requires the exact gas-sponsorship declaration, never requires
+  buyer ETH/SOL, and never falls back to historical buyer-funded profiles.
+- Spend authority is the dedicated wallet's funded token balance plus an
+  optional `maximumPaymentAtomic` per-payment ceiling set at wallet creation.
+  Version 0.2.2 has no daily, aggregate, merchant-allowlist, policy-update, or
+  hosted-policy permission system.
+- Exact authorization, submission, durable attempts, response evidence,
+  reconciliation, the combined `pay` command, and the bundled `x402api-pay`
+  skill are implemented and tested.
+- TRON wallet management and low-level conformance code remain available, but
+  TRON payment authorization, sweep, and arbitrary payer expansion remain
+  release-gated.
+- The refill-notification client contract is implemented. The hosted endpoint
+  described in `server-refill-notification-implementation-plan.md` is a
+  separate platform rollout and is not implemented by this repository.
+- The CLI runs on the buyer or agent host. It is not hosted by or running
+  inside WarpMetal; WarpMetal remains a separate merchant/reference
+  integration.
+
+The remaining phased sections preserve design rationale and future acceptance
+targets. They are not a claim that every listed phase or external integration
+is complete.
 
 ## Launch amendment
 
@@ -55,8 +89,9 @@ That repository is the canonical source for the wallet core, CLI, skill,
 public contracts, releases, and security advisories. The private
 `Fractal-Grid-AI/k1hub_402_payments` repository is the implementation baseline
 and hosted-platform integration source; it is not the release repository for
-this product. This draft may be prepared here, but its canonical copy and all
-implementation work move to `x402api-com/x402api-agent-wallet` before Phase 1.
+this product. The original draft was prepared there, then moved to
+`x402api-com/x402api-agent-wallet`, which is now the canonical implementation
+and release source.
 
 The product model is intentionally simple:
 
@@ -332,11 +367,10 @@ Public artifacts:
 | CLI package | `@x402api/agent-wallet-cli` | Installs the `x402api` executable |
 | Skill | `x402api-pay` | Portable instructions for tool-using agents |
 
-All public packages use the `@x402api` namespace. Phase 0 must verify npm scope
-ownership, organization publisher access, provenance configuration, and name
-availability. If that access is unavailable, release is blocked; packages must
-not silently fall back to `@k1hub` while the product and documentation promise
-`x402api` ownership.
+All public packages use the `@x402api` namespace. Scope ownership, organization
+publisher access, package names, and npm provenance were verified for the
+0.2.2 release. Future releases must retain trusted publishing and must not
+silently fall back to `@k1hub`.
 
 The core library prevents the CLI from becoming the only integration surface.
 Trusted merchant tools can later call the same code in-process without
@@ -366,10 +400,9 @@ private monorepo or exposing its Git history:
    compatible buyer-side behavior and keep cross-repository compatibility tests
    pinned to released contract versions.
 
-The plan file in `k1hub_402_payments` is a staging copy until step 2. Do not
-commit parallel canonical copies that can drift; once the new repository
-exists, this location should contain only a link or migration note if an
-internal reference remains useful.
+The copy in this public repository is canonical. Any internal staging copy in
+`k1hub_402_payments` should contain only a link or migration note so parallel
+plans cannot drift.
 
 ## 7. CLI contract
 
@@ -1125,6 +1158,19 @@ Before GA:
 
 ## 18. Delivery phases
 
+These are the original delivery phases, retained as a roadmap and audit trail.
+Their current status is:
+
+| Phase | 0.2.2 status |
+| --- | --- |
+| 0 — Contract and threat model | Complete for the public repository, MIT license, package ownership, trusted publishing, provenance, and current contracts. Production-support review remains open. |
+| 1 — Agent wallet core | Complete for local wallet lifecycle, sponsored Base/Solana authorization, durable attempts, and the shipped conformance suites. TRON payer authorization is not launched. |
+| 2 — CLI | Complete for the documented 0.2.2 command surface, including exact submission and reconciliation in addition to the original signer-only target. Sweep remains gated. |
+| 3 — Agent skill | Bundled, installable, and validated. Cross-runtime and live-mainnet evidence remain release gates. |
+| 4 — WarpMetal reference integration | External to this repository. It does not mean that x402api is hosted or running inside WarpMetal. |
+| 5 — Generic payer and ecosystem release | Credential-free generic `pay` is shipped. A second independent merchant and the hosted refill endpoint remain open. |
+| 6 — Fee handling and optional adapters | Sponsored Base/Solana native fees are shipped. Additional rails, replenishment, delegation, and hosted wallets remain open. |
+
 ### Phase 0 — Contract and threat model
 
 - Approve this plan.
@@ -1232,9 +1278,12 @@ network-specific wallets without exposing its owner token to wallet artifacts.
 **Exit:** each added adapter preserves the same request, artifact, attempt, and
 skill contracts or introduces an explicitly versioned migration.
 
-## 19. V1 acceptance criteria
+## 19. Original full-scope acceptance criteria
 
-V1 is complete only when all of the following are true:
+The original full-scope target is complete only when all of the following are
+true. This is a forward-looking roadmap, not the release definition for 0.2.2;
+in particular, 0.2.2 intentionally does not claim TRON payer support,
+production WarpMetal conformance, or the hosted refill endpoint.
 
 1. `x402api-com/x402api-agent-wallet` is the public canonical source for the
    reviewed implementation, skill, contracts, releases, and security policy.
@@ -1268,59 +1317,64 @@ V1 is complete only when all of the following are true:
 
 ## 20. Resolved and remaining decisions before implementation
 
-The repository, package, license, and V1 wire-identity decisions are resolved:
+The repository, package, license, and launch wire-identity decisions are
+resolved:
 
 - **Canonical repository:** `x402api-com/x402api-agent-wallet`, public and
   separate from the generated language SDK repositories.
-- **Public package namespace:** `@x402api`; inability to publish under that
-  scope blocks release rather than causing a fallback to `@k1hub`.
+- **Public package namespace:** `@x402api`; core and CLI 0.2.2 are published
+  there with npm provenance. Future publication failures must block release
+  rather than cause a fallback to `@k1hub`.
 - **Canonical skill location:** `skills/x402api-pay` in the agent-wallet
   repository and distributed with version-pinned CLI releases.
 - **License:** MIT, matching the public x402api package strategy.
-- **V1 wire identities:** preserve the deployed literal `com.k1hub...`
-  profiles; any renamed profile is a coordinated versioned migration.
+- **Wire identities:** preserve historical deployed `com.k1hub...`
+  buyer-funded/TRON literals for lower-level compatibility. The launched
+  sponsored profiles and gas declaration use the coordinated `com.x402api...`
+  literals. Any future rename is a versioned migration.
 - **Source provenance:** extraction is tied to private source commit
   `8bf84404bc16d265d530c86071044f323a110316` and the inventory in
   `docs/source-provenance.md`.
-- **Package-name check:** the npm registry returned `404` for both planned
-  package names on 2026-08-19. Scope publisher access and first publication
-  remain release gates; a registry lookup does not reserve a name.
+- **Package publication:** both packages are published at 0.2.2, with trusted
+  publishing configured by public
+  [PR #9](https://github.com/x402api-com/x402api-agent-wallet/pull/9).
 
-The remaining items are implementation gates, not reasons to expand scope:
+The remaining items are future or production-support gates, not reasons to
+expand scope:
 
 1. **Storage support:** exact macOS and Linux headless unlock mechanisms for
    V1; Windows may follow if it delays the first proven release.
 2. **CLI confirmation:** define the non-model confirmation needed for sweep and
    destructive retirement while keeping ordinary purchases autonomous.
-3. **Optional payment ceiling:** decide whether wallet creation requires a
-   local maximum-per-payment or leaves balance as the only initial limit.
-4. **Artifact consumption:** add `--payment-artifact` to WarpMetal or initially
-   derive its existing signature-header file from the artifact.
-5. **RPC defaults:** decide whether releases include default providers or
+3. **Merchant artifact consumption:** validate each external merchant's exact
+   artifact handoff without moving wallet keys or the CLI into that merchant.
+4. **RPC defaults:** decide whether releases include default providers or
    require explicit RPC configuration.
-6. **Release provenance:** finish npm trusted publishing, signing, checksums,
-   dependency-license evidence, and vulnerability-response verification.
+5. **Production evidence:** complete capped live-rail, recovery,
+   dependency-license, and vulnerability-response verification.
 
-Gas sponsorship, automatic replenishment, additional chains, delegation, and
-hosted wallet services are explicitly deferred and do not block these six
-V1 decisions.
+Gas sponsorship is launched for Base and Solana. Automatic replenishment,
+additional payer rails, delegation, and hosted wallet services remain deferred.
 
 ## 21. Documentation rollout
 
-When implementation reaches Phase 4:
+Current documentation requirements are:
 
 - update x402api agent docs to distinguish the available CLI from conceptual
   wallet-service pseudocode;
 - add a dedicated agent-wallet setup and funding guide;
-- add CLI and skill installation to x402api `/llms.txt`;
+- keep this repository's `llms.txt`, CLI reference, skill, security policy, and
+  package READMEs aligned with each release;
 - keep receiving-wallet documentation separate from buyer agent-wallet
   documentation;
-- update WarpMetal `/llms.txt`, API guide, landing page, CLI reference, and
-  skill in one release;
+- update WarpMetal documentation in its own repository when that separate
+  merchant integration changes, without implying that x402api runs there;
 - describe the wallet as persistent and locally funded, never disposable by
   default; and
 - state plainly that the agent can spend the dedicated wallet balance and that
   the owner's primary wallet must never be imported.
 
-Documentation must not advertise automatic gas handling, unsupported rails,
-or hosted key protection before those features have release evidence.
+Documentation may advertise the released sponsored Base/Solana fee path, but
+must not advertise buyer-funded fallback, automatic token replenishment,
+unsupported rails, a deployed hosted refill endpoint, or hosted key protection
+before those features have release evidence.

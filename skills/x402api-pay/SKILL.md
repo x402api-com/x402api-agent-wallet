@@ -22,6 +22,11 @@ Install only the skill bundled with the exact CLI version. If it is not already
 installed, an operator can run `x402api skill install --output PATH --json`.
 The command refuses to overwrite an existing skill directory.
 
+The `x402api` CLI runs on the buyer or agent host where its encrypted wallet is
+stored. Merchant tools, including the WarpMetal reference integration, may
+prepare requests and consume artifacts, but they do not host the CLI or receive
+its private keys.
+
 Do not supply a passphrase on the command line. An operator must arrange
 `X402API_WALLET_PASSWORD_FILE` as an owner-only file or supervise
 `--password-stdin`. Never read, print, summarize, or paste that passphrase,
@@ -35,7 +40,8 @@ seed, private key, encrypted keystore, or complete payment signature.
    an address from another network or create a new wallet merely because an
    order is a renewal.
 4. Treat the funded balance as fully spendable by the autonomous agent, subject
-   to any local per-payment ceiling.
+   to any local `maximumPaymentAtomic` per-payment ceiling. That ceiling is not
+   a daily, cumulative, or merchant-specific permission.
 5. Show the public address, exact network, supported asset, sponsored native
    fee currency, and requested token funding amount when funding is
    insufficient. Never ask the owner to fund ETH/SOL or reveal or import a

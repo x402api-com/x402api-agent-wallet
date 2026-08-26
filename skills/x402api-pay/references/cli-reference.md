@@ -31,6 +31,12 @@ x402api wallet retire --wallet NAME --confirm NAME --json
 x402api wallet sweep --wallet NAME --to ADDRESS --json
 ```
 
+`--maximum-payment-atomic` is an optional canonical decimal in atomic units for
+the wallet's supported payment asset. It is enforced on each authorization and
+returns `payment_limit_exceeded` when the exact amount is larger. It is not a
+daily or cumulative budget. Version 0.2.2 sets it only at wallet creation and
+does not provide a policy-update command.
+
 Unlocking commands additionally require `X402API_WALLET_PASSWORD_FILE` or an
 operator-supervised `--password-stdin`. Supported V1 networks are
 `eip155:8453`, `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`, and
@@ -42,7 +48,7 @@ operator-supervised `--password-stdin`. Supported V1 networks are
 x402api wallet notify-refill \
   --wallet NAME \
   --subscription-reference ID \
-  --renew-by 2026-08-25T12:00:00.000Z \
+  --renew-by RFC3339_UTC_DEADLINE \
   --target-balance-atomic N \
   --reason renewal \
   --json
@@ -53,6 +59,10 @@ asset balance in atomic units, not the native fee balance. Results have status
 `accepted`, `deduplicated`, or `not_required`. x402api chooses the pre-verified
 email recipient and derives tenant and product display data from the
 subscription; those values are intentionally not CLI arguments.
+
+The client command is shipped, but this repository does not provide the hosted
+notification endpoint. Configure `X402API_NOTIFICATION_URL` only for an
+approved deployment of the server contract.
 
 ## Payment commands
 
@@ -79,6 +89,8 @@ when a merchant-specific integration owns the request lifecycle.
 - `password_required`, `wallet_locked`: request operator unlock assistance;
   never request secret material in chat.
 - `wallet_storage_unsafe`, `payment_artifact_corrupt`: stop and escalate.
+- `payment_limit_exceeded`: the exact payment exceeds the wallet's local
+  per-payment ceiling; do not split or reauthorize it to evade the limit.
 - `insufficient_asset_balance`: show exact funding instructions or request a
   registered refill notification.
 - `insufficient_network_fee_resources`: is not expected for a valid launch
