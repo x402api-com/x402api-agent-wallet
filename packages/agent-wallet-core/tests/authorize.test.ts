@@ -116,10 +116,10 @@ function challenge(
             },
           ],
           buyerNativeFeeRequired: false,
-          billingParty: "tenant_service_credit",
+          billingParty: "platform_treasury",
           maximumReservationEvidenceDigest: `sha256:${"5".repeat(64)}`,
           expiresAt,
-          finalChargePolicy: "canonical_actual_gas_capped_by_reservation",
+          finalChargePolicy: "platform_treasury_actual_cost",
         },
         schema: {
           $id: "urn:com:x402api:gas-sponsorship:v1",
@@ -268,6 +268,43 @@ describe("sponsored launch authorization orchestration", () => {
       }),
     ).rejects.toMatchObject({ code: "sponsorship_reservation_expired" });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts the matched legacy tenant-credit policy during rollout", async () => {
+    const paymentRequired = challenge(sponsoredRequirement());
+    const sponsorship = paymentRequired.extensions![
+      "com.x402api.gas-sponsorship"
+    ]!.info;
+    sponsorship.billingParty = "tenant_service_credit";
+    sponsorship.finalChargePolicy =
+      "canonical_actual_gas_capped_by_reservation";
+    const state = await fixture(paymentRequired);
+    mockSolanaRpc();
+
+    await expect(
+      authorizePayment({
+        ...state,
+        wallet: "buyer",
+        rpc: { solana: "https://rpc.example" },
+        now,
+      }),
+    ).resolves.toMatchObject({ state: "authorized" });
+  });
+
+  it("rejects a mixed sponsorship billing policy", async () => {
+    const paymentRequired = challenge(sponsoredRequirement());
+    paymentRequired.extensions!["com.x402api.gas-sponsorship"]!.info
+      .finalChargePolicy = "canonical_actual_gas_capped_by_reservation";
+    const state = await fixture(paymentRequired);
+
+    await expect(
+      authorizePayment({
+        ...state,
+        wallet: "buyer",
+        rpc: { solana: "https://rpc.example" },
+        now,
+      }),
+    ).rejects.toThrow("PAYMENT-REQUIRED could not be decoded strictly");
   });
 
   it("does not fall back to a buyer-funded Solana profile", async () => {

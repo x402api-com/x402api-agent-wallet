@@ -4,15 +4,16 @@ Installs the `x402api` executable and bundled `x402api-pay` skill for persistent
 agent wallets and exact x402 payments.
 
 The launch payer authorizes only sponsored Base USDC and sponsored Solana
-USDC/USDT. x402api supplies the network fee asset, so buyers do not need ETH or
-SOL. TRON payment authorization returns `unsupported_profile` until that rail
-is launched.
+USDC/USDT. x402api supplies the network fee asset from its platform treasury,
+so buyers do not need ETH or SOL and actual gas is not debited from the
+merchant tenant. TRON payment authorization returns `unsupported_profile`
+until that rail is launched.
 
 The CLI runs on the buyer or agent host; merchant integrations do not host it
 or receive its keys. A wallet's funded token balance is spend authority, and
 `wallet create --maximum-payment-atomic N` can add a per-payment ceiling. The
 ceiling is not a daily, cumulative, or merchant-specific permission and cannot
-be updated in place in version 0.2.2.
+be updated in place in version 0.2.3.
 
 Run `x402api help --json` for the machine-readable command summary. Unlock
 material is accepted only from standard input or an owner-only file named by

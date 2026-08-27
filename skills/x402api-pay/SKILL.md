@@ -80,7 +80,9 @@ instructions to the human instead of sending email.
    request and receive its `402 Payment Required` challenge.
 2. Have that integration write the exact credential-free request envelope.
    Never place authorization tokens, cookies, SSH keys, or owner credentials in
-   the envelope.
+   the envelope. Keep any merchant-side `X-X402API-Challenge-Handle` out as
+   well; it is reconciliation metadata, not the buyer payment identifier or a
+   signing input.
 3. Verify the URL, method, exact body bytes, resource, network, asset, amount,
    recipient, profile, and challenge digest.
 4. Require a launch-sponsored Base USDC or Solana USDC/USDT profile and the
@@ -104,7 +106,8 @@ submission rules.
 Distinguish these states:
 
 - funding: the wallet has usable USDC/USDT balance; x402api sponsors launch-rail
-  ETH/SOL from the merchant tenant's prepaid gas billing;
+  ETH/SOL from its platform treasury, subject to the merchant tenant's active
+  sponsorship allowance;
 - authorization: one durable payment artifact exists;
 - settlement: the payment is authoritative on the chosen rail;
 - fulfillment: the merchant returned the purchased result.

@@ -256,6 +256,14 @@ function validateGasSponsorshipDeclaration(
 ): void {
   const info = declaration.info;
   const schema = declaration.schema;
+  const platformTreasuryPolicy =
+    isObject(info) &&
+    info.billingParty === "platform_treasury" &&
+    info.finalChargePolicy === "platform_treasury_actual_cost";
+  const legacyTenantCreditPolicy =
+    isObject(info) &&
+    info.billingParty === "tenant_service_credit" &&
+    info.finalChargePolicy === "canonical_actual_gas_capped_by_reservation";
   const infoKeys = [
     "billingParty",
     "buyerNativeFeeRequired",
@@ -272,8 +280,7 @@ function validateGasSponsorshipDeclaration(
     info.version !== 1 ||
     info.mode !== "facilitator_pays" ||
     info.buyerNativeFeeRequired !== false ||
-    info.billingParty !== "tenant_service_credit" ||
-    info.finalChargePolicy !== "canonical_actual_gas_capped_by_reservation" ||
+    (!platformTreasuryPolicy && !legacyTenantCreditPolicy) ||
     typeof info.maximumReservationEvidenceDigest !== "string" ||
     !/^sha256:[0-9a-f]{64}$/.test(info.maximumReservationEvidenceDigest) ||
     typeof info.expiresAt !== "string" ||

@@ -25,7 +25,12 @@ The merchant tool writes an owner-only JSON file:
 The body is exact canonical base64 and is never parsed and reserialized before
 paid submission. The decoded `resource.url` must equal the normalized envelope
 URL. The envelope excludes authorization headers, cookies, API keys, SSH keys,
-and owner tokens.
+owner tokens, and merchant-side challenge handles. A response header such as
+`X-X402API-Challenge-Handle` is opaque reconciliation metadata for the merchant
+integration. It is not the buyer payment identifier, does not affect the token
+authorization, and must not be added to this exact V1 envelope. The wallet
+creates its own `buyerPaymentIdentifier` when it authorizes a selected payment
+requirement.
 
 ## Payment submission or artifact handoff
 

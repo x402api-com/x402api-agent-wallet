@@ -34,7 +34,7 @@ x402api wallet sweep --wallet NAME --to ADDRESS --json
 `--maximum-payment-atomic` is an optional canonical decimal in atomic units for
 the wallet's supported payment asset. It is enforced on each authorization and
 returns `payment_limit_exceeded` when the exact amount is larger. It is not a
-daily or cumulative budget. Version 0.2.2 sets it only at wallet creation and
+daily or cumulative budget. Version 0.2.3 sets it only at wallet creation and
 does not provide a policy-update command.
 
 Unlocking commands additionally require `X402API_WALLET_PASSWORD_FILE` or an
@@ -95,13 +95,21 @@ when a merchant-specific integration owns the request lifecycle.
   registered refill notification.
 - `insufficient_network_fee_resources`: is not expected for a valid launch
   profile; stop because the merchant challenge was not safely sponsored.
-- `gas_treasury_below_floor`, `tenant_gas_credit_insufficient`,
-  `sponsorship_reservation_expired`: the sponsored rail is temporarily not
-  admissible; do not switch to buyer-funded gas.
+- `gas_sponsorship_unavailable`, `gas_treasury_below_floor`,
+  `sponsor_signature_unavailable`: retain the exact attempt and retry only with
+  bounded backoff; never switch to buyer-funded gas.
+- `sponsorship_allowance_unavailable`, `sponsorship_payment_cap_exceeded`,
+  `sponsorship_payment_allowance_exhausted`,
+  `sponsorship_volume_allowance_exhausted`,
+  `sponsorship_gas_budget_exhausted`: the current authorization is terminal.
+  The merchant tenant must top up or change its allowance configuration and
+  issue a fresh challenge; the buyer must not fund native gas.
+- `tenant_gas_credit_insufficient`: legacy-server response; retain the exact
+  attempt and retry only after the merchant tenant restores service credit.
+- `sponsorship_reservation_expired`: obtain a fresh challenge without reusing
+  the expired authorization.
 - `sponsored_payload_invalid`: stop; the challenge or signed payload is not
   safely sponsored.
-- `sponsor_signature_unavailable`: retain the exact attempt and retry with
-  bounded backoff.
 - `settlement_outcome_unknown`: keep the exact attempt and request envelope;
   retry or reconcile them without creating a new authorization.
 - `unsupported_network`, `unsupported_asset`, `unsupported_profile`,

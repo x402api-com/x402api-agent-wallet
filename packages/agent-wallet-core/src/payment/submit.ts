@@ -15,6 +15,11 @@ const RETRYABLE_SPONSORSHIP_ERRORS = new Set<AgentWalletErrorCode>([
   "sponsor_signature_unavailable",
 ]);
 const TERMINAL_SPONSORSHIP_ERRORS = new Set<AgentWalletErrorCode>([
+  "sponsorship_allowance_unavailable",
+  "sponsorship_payment_cap_exceeded",
+  "sponsorship_payment_allowance_exhausted",
+  "sponsorship_volume_allowance_exhausted",
+  "sponsorship_gas_budget_exhausted",
   "sponsorship_reservation_expired",
   "sponsored_payload_invalid",
 ]);
