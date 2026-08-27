@@ -53,6 +53,9 @@ describe("request envelope contract", () => {
     expect(() => parseRequestEnvelope({ ...envelope(), authorization: "secret" }))
       .toThrowError(AgentWalletError);
     expect(() =>
+      parseRequestEnvelope({ ...envelope(), challengeHandle: "charge_123" }),
+    ).toThrow(/unknown fields/);
+    expect(() =>
       parseRequestEnvelope({ ...envelope(), url: "https://merchant.example/v1/other" }),
     ).toThrow(/resource does not match/);
   });

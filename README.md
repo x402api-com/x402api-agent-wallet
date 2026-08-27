@@ -6,14 +6,16 @@ uses separate wallets for each network, and durably binds every authorization
 and submission to one exact merchant request.
 
 The launch payer supports sponsored Base USDC and sponsored Solana USDC/USDT.
-The buyer signs token authority only; x402api supplies ETH/SOL and charges the
-merchant tenant's prepaid service credit. A buyer does not need ETH or SOL.
-TRON wallet management remains available, but TRON payment authorization is
-coming soon and cannot be selected or used as a fallback.
+The buyer signs token authority only; x402api supplies ETH/SOL and pays the
+canonical actual cost from its platform treasury. Actual gas is not debited
+from the merchant tenant. A buyer does not need ETH or SOL. TRON wallet
+management remains available, but TRON payment authorization is coming soon
+and cannot be selected or used as a fallback.
 
-> **Release status:** `0.2.2` is published on npm with provenance. Production
-> mainnet support remains gated by the capped live evidence and release review
-> described in [SECURITY.md](SECURITY.md).
+> **Release status:** `0.2.3` is the current source release line; `0.2.2`
+> remains the latest published npm version until the coordinated release.
+> Production mainnet support remains gated by the capped live evidence and
+> release review described in [SECURITY.md](SECURITY.md).
 
 ## Permissions and spend boundary
 
@@ -32,7 +34,7 @@ x402api wallet create \
 
 The value is canonical atomic units for the supported payment asset. It is a
 per-payment limit, not a daily or cumulative budget, merchant allowlist, or
-hosted policy. Version 0.2.2 has no policy-update command; the ceiling is set
+hosted policy. Version 0.2.3 has no policy-update command; the ceiling is set
 when the wallet is created. Owner-only directories (`0700`) and files (`0600`)
 protect stored material from accidental local exposure, but they do not make a
 compromised same-user host safe.
@@ -44,9 +46,10 @@ hosted by or running inside WarpMetal. WarpMetal is a separate merchant and
 reference integration that can hand an exact payment request to the local CLI.
 
 For an admitted sponsored profile, x402api reserves and supplies the Base or
-Solana native network fee and charges the merchant tenant's prepaid gas credit.
-The wallet enforces the exact gas-sponsorship declaration and never falls back
-to buyer-funded ETH or SOL.
+Solana native network fee from its platform treasury. The merchant tenant's
+active allowance controls sponsorship admission, but actual gas is not a
+tenant debit. The wallet enforces the exact gas-sponsorship declaration and
+never falls back to buyer-funded ETH or SOL.
 
 ## Packages
 
@@ -64,7 +67,7 @@ is the executable that holds keys, authorizes payments, and safely submits or
 reconciles an exact credential-free request.
 
 ```bash
-npm install --global @x402api/agent-wallet-cli@0.2.2
+npm install --global @x402api/agent-wallet-cli@0.2.3
 x402api skill install --output "$CODEX_HOME/skills/x402api-pay" --json
 ```
 
@@ -76,6 +79,11 @@ authorization and exact submission in one command. `payment authorize` and
 `payment submit` keep the two stages explicit for merchant-specific tools.
 Timeouts and asynchronous responses retain the same attempt and signature;
 they never create a replacement payment automatically.
+
+Merchant reconciliation metadata is outside the wallet contract. In
+particular, `X-X402API-Challenge-Handle` is intentionally excluded from the
+exact V1 request envelope; it is not the wallet-created buyer payment
+identifier or a signing input.
 
 ## Refill notifications
 

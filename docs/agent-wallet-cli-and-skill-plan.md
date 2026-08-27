@@ -1,7 +1,8 @@
 # x402api Agent Wallet CLI and Skill Plan
 
-**Status:** Historical design record with a current 0.2.2 implementation
-snapshot; 0.2.2 is published on npm, while production mainnet support remains
+**Status:** Historical design record with a 0.2.2 implementation snapshot and
+the 0.2.3 sponsorship-accounting amendment; 0.2.2 remains published on npm
+until the coordinated 0.2.3 release, while production mainnet support remains
 release-gated
 
 **Date:** 2026-08-19; launch amendment 2026-08-22; status verified 2026-08-26
@@ -58,9 +59,10 @@ statements in the original phased design record below:
 - The launch authorization orchestrator selects only sponsored Base USDC and
   sponsored Solana USDC/USDT requirements with the exact
   `com.x402api.gas-sponsorship` binding.
-- x402api supplies ETH/SOL and charges the merchant tenant's prepaid gas
-  billing. The buyer funds only the payment token and is never asked to fall
-  back to buyer-funded gas.
+- x402api supplies ETH/SOL and pays canonical actual gas from its platform
+  treasury. Tenant top-up or trial allowances control sponsorship admission,
+  but actual gas is not a tenant debit. The buyer funds only the payment token
+  and is never asked to fall back to buyer-funded gas.
 - TRON wallet management and low-level conformance code remain available, but
   TRON payment authorization is coming soon and is rejected by the public
   payer.

@@ -248,6 +248,31 @@ describe("exact paid request submission", () => {
     });
   });
 
+  it.each([
+    "sponsorship_allowance_unavailable",
+    "sponsorship_payment_cap_exceeded",
+    "sponsorship_payment_allowance_exhausted",
+    "sponsorship_volume_allowance_exhausted",
+    "sponsorship_gas_budget_exhausted",
+  ] as const)("terminalizes tenant allowance rejection %s", async (code) => {
+    const state = await fixture();
+
+    await expect(
+      submitAuthorizedPayment({
+        attemptsDirectory: state.attemptsDirectory,
+        attemptId: state.record.attemptId,
+        requestEnvelopePath: state.requestEnvelopePath,
+        fetchImplementation: async () =>
+          Response.json({ error: { code } }, { status: 402 }),
+        now: new Date("2026-08-22T20:01:00.000Z"),
+      }),
+    ).rejects.toMatchObject({ code, retryable: false });
+    expect(await state.store.get(state.record.attemptId)).toMatchObject({
+      state: "terminal_failed",
+      lastErrorCode: code,
+    });
+  });
+
   it("terminalizes an expired authorization before network submission", async () => {
     const state = await fixture("2026-08-22T20:00:30.000Z");
     const fetchImplementation = vi.fn();
