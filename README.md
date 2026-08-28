@@ -12,8 +12,7 @@ from the merchant tenant. A buyer does not need ETH or SOL. TRON wallet
 management remains available, but TRON payment authorization is coming soon
 and cannot be selected or used as a fallback.
 
-> **Release status:** `0.2.3` is the current source release line; `0.2.2`
-> remains the latest published npm version until the coordinated release.
+> **Release status:** `0.2.4` is the current source and npm release line.
 > Production mainnet support remains gated by the capped live evidence and
 > release review described in [SECURITY.md](SECURITY.md).
 
@@ -34,7 +33,7 @@ x402api wallet create \
 
 The value is canonical atomic units for the supported payment asset. It is a
 per-payment limit, not a daily or cumulative budget, merchant allowlist, or
-hosted policy. Version 0.2.3 has no policy-update command; the ceiling is set
+hosted policy. Version 0.2.4 has no policy-update command; the ceiling is set
 when the wallet is created. Owner-only directories (`0700`) and files (`0600`)
 protect stored material from accidental local exposure, but they do not make a
 compromised same-user host safe.
@@ -67,7 +66,7 @@ is the executable that holds keys, authorizes payments, and safely submits or
 reconciles an exact credential-free request.
 
 ```bash
-npm install --global @x402api/agent-wallet-cli@0.2.3
+npm install --global @x402api/agent-wallet-cli@0.2.4
 x402api skill install --output "$CODEX_HOME/skills/x402api-pay" --json
 ```
 
@@ -84,6 +83,12 @@ Merchant reconciliation metadata is outside the wallet contract. In
 particular, `X-X402API-Challenge-Handle` is intentionally excluded from the
 exact V1 request envelope; it is not the wallet-created buyer payment
 identifier or a signing input.
+
+For programmatic charges, the trusted merchant server—not the Agent Wallet—uses
+the current resource `active_version.id` with `POST /v1/charges`. The wallet
+receives only the resulting credential-free exact request and canonical
+`PAYMENT-REQUIRED` challenge. See the
+[merchant integration reference](skills/x402api-pay/references/merchant-integration.md).
 
 ## Refill notifications
 

@@ -1,6 +1,6 @@
 # x402api Agent Wallet
 
-> Open-source persistent local agent-wallet CLI and portable skill for exact x402 payments. Version 0.2.3 authorizes only sponsored Base USDC and sponsored Solana USDC/USDT payments.
+> Open-source persistent local agent-wallet CLI and portable skill for exact x402 payments. Version 0.2.4 authorizes only sponsored Base USDC and sponsored Solana USDC/USDT payments.
 
 The `x402api` CLI runs on the buyer or agent host and keeps encrypted private
 keys there. It is not hosted by or running inside WarpMetal; WarpMetal is a
@@ -29,6 +29,7 @@ to the gates in the security policy.
 
 - [Safety rules](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/skills/x402api-pay/references/safety.md): Funding authority, local ceilings, secrets, hostile input, backup, and retirement.
 - [Merchant integration](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/skills/x402api-pay/references/merchant-integration.md): Exact request envelopes, artifact handoff, submission, and reconciliation.
+- [Tenant programmatic charges](https://x402api.com/docs/payments/x402/programmatic-charges): Merchant-server template UUID, charge creation, and buyer handoff. The Agent Wallet does not receive tenant credentials or create charges.
 - [Threat model](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/docs/threat-model.md): Trust boundaries, controls, residual risks, and non-goals.
 - [Security policy](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/SECURITY.md): Vulnerability reporting and supported-version status.
 - [Source provenance](https://raw.githubusercontent.com/x402api-com/x402api-agent-wallet/main/docs/source-provenance.md): Extracted protocol sources and post-extraction synchronization record.
