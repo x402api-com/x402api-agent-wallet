@@ -32,6 +32,28 @@ authorization, and must not be added to this exact V1 envelope. The wallet
 creates its own `buyerPaymentIdentifier` when it authorizes a selected payment
 requirement.
 
+## Programmatic charge handoff
+
+A merchant may create a variable-price challenge with the tenant-authenticated
+x402api `POST /v1/charges` endpoint before writing the wallet request envelope.
+That operation belongs to trusted merchant server code—not this wallet.
+
+- The merchant uses the current template `active_version.id` as
+  `resource_version_id`; a resource UUID or `pay_...` public payment ID is not a
+  substitute.
+- One active template may allow multiple rails. The merchant charge supplies
+  exact runtime amounts for a non-empty subset; the wallet independently
+  validates and selects one returned `PAYMENT-REQUIRED.accepts` alternative.
+- The request envelope receives only the exact credential-free protected
+  request and canonical `PAYMENT-REQUIRED` challenge. It never contains the
+  tenant API credential, `resource_version_id`, or a tenant-side API request.
+- Retiring or replacing a template is a merchant concern. The wallet validates
+  the exact issued challenge and must not discover, guess, or rewrite a
+  template UUID.
+
+See the tenant integration guide at
+https://x402api.com/docs/payments/x402/programmatic-charges.
+
 ## Payment submission or artifact handoff
 
 `payment authorize` writes an owner-only artifact once and records its digest

@@ -9,7 +9,7 @@ Base, Solana, and TRON.
 
 An optional `maximumPaymentAtomic` value adds a local ceiling to each payment.
 It does not limit aggregate or daily spend, restrict merchants, revoke existing
-artifacts, or protect a wallet on a compromised same-user host. Version 0.2.3
+artifacts, or protect a wallet on a compromised same-user host. Version 0.2.4
 sets this value only when creating a wallet and has no policy-update command.
 
 Show the exact network, token contract or mint, public address, and requested
