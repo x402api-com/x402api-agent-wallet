@@ -1,6 +1,6 @@
 {
   "name": "x402api-agent-wallet-workspace",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "Persistent local agent wallet CLI and skill for x402 payments.",
   "license": "MIT",

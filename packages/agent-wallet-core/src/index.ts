@@ -13,3 +13,4 @@ export * from "./protocol/tron.js";
 export * from "./storage/keystore.js";
 export * from "./storage/paths.js";
 export * from "./storage/private-files.js";
+export * from "./storage/unlock.js";

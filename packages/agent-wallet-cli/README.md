@@ -13,13 +13,23 @@ The CLI runs on the buyer or agent host; merchant integrations do not host it
 or receive its keys. A wallet's funded token balance is spend authority, and
 `wallet create --maximum-payment-atomic N` can add a per-payment ceiling. The
 ceiling is not a daily, cumulative, or merchant-specific permission and cannot
-be updated in place in version 0.2.4.
+be updated in place in version 0.2.5.
 
-Run `x402api help --json` for the machine-readable command summary. Unlock
-material is accepted only from standard input or an owner-only file named by
+Run `x402api wallet setup --json` once on a fresh host. It idempotently creates
+a high-entropy managed unlock file under the private x402api data root; the
+passphrase is never printed and no shell profile is changed. Unlock material
+can instead come from supervised standard input or an owner-only file named by
 `X402API_WALLET_PASSWORD_FILE`; passphrases are never accepted as command-line
-values. Paid response bodies and full payment signatures remain in owner-only
-files and are not printed by ordinary JSON output.
+values. A managed file and encrypted keystore on the same host do not protect
+against a compromised same-user process. Paid response bodies and full payment
+signatures remain in owner-only files and are not printed by ordinary JSON
+output.
+
+`wallet funding --wallet NAME --asset ASSET --target-balance-atomic N --json`
+returns the exact token deficit and the payer address as both text and a QR
+payload. Send only the named token on the exact network to that payer address,
+not to the token contract/mint or merchant recipient. Supported Base/Solana
+payments do not require buyer-funded ETH/SOL.
 
 Install the exact skill shipped with this CLI without overwriting an existing
 copy:

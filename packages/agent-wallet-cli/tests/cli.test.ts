@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AttemptStore,
+  SOLANA_MAINNET_GENESIS_HASH,
+  SOLANA_USDC_MAINNET_MINT,
   encodePaymentRequiredHeader,
   loadRequestEnvelope,
   walletPaths,
@@ -15,6 +17,13 @@ import {
 import { runCli } from "../src/cli.js";
 
 const roots: string[] = [];
+
+function rpc(result: unknown): Response {
+  return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -52,6 +61,119 @@ async function fixture() {
 }
 
 describe("agent wallet CLI contract", () => {
+  it("routes a missing managed source to wallet setup", async () => {
+    const state = await fixture();
+    const options = {
+      ...state.options,
+      environment: {
+        X402API_HOME: state.options.environment.X402API_HOME,
+      },
+    };
+
+    expect(
+      await runCli(
+        [
+          "wallet",
+          "create",
+          "--name",
+          "buyer",
+          "--network",
+          "eip155:8453",
+          "--json",
+        ],
+        options,
+      ),
+    ).toBe(14);
+    expect(JSON.parse(state.stdout.at(-1)!)).toMatchObject({
+      error: {
+        code: "password_required",
+        message:
+          "wallet password source is not configured; run x402api wallet setup --json",
+      },
+    });
+  });
+
+  it("sets up a managed unlock source and creates a wallet without environment plumbing", async () => {
+    const state = await fixture();
+    const environment: NodeJS.ProcessEnv = {
+      X402API_HOME: state.options.environment.X402API_HOME,
+    };
+    const options = { ...state.options, environment };
+
+    expect(await runCli(["wallet", "setup", "--json"], options)).toBe(0);
+    const setup = JSON.parse(state.stdout.at(-1)!);
+    expect(setup).toMatchObject({
+      version: 1,
+      status: "configured",
+      passwordSource: "managed_default_file",
+    });
+    expect(setup.supportedNetworks).toContain("eip155:8453");
+    expect(JSON.stringify(setup)).not.toMatch(/passphrase|privateKey|ciphertext/);
+    if (process.platform !== "win32") {
+      expect((await lstat(setup.passwordFile)).mode & 0o077).toBe(0);
+    }
+
+    expect(await runCli(["wallet", "setup", "--json"], options)).toBe(0);
+    expect(JSON.parse(state.stdout.at(-1)!).status).toBe("already_configured");
+    expect(
+      await runCli(
+        [
+          "wallet",
+          "create",
+          "--name",
+          "managed-buyer",
+          "--network",
+          "eip155:8453",
+          "--maximum-payment-atomic",
+          "25000000",
+          "--json",
+        ],
+        options,
+      ),
+    ).toBe(0);
+    const created = JSON.parse(state.stdout.at(-1)!);
+    expect(created.status).toBe("created_unfunded");
+    expect(created.fundingAssets[0].funding.argv).toContain(
+      "<target-balance-atomic>",
+    );
+  });
+
+  it("can seed the managed source from supervised stdin without echoing it", async () => {
+    const state = await fixture();
+    const supervisedSecret = "operator supervised passphrase";
+    const options = {
+      environment: {
+        X402API_HOME: state.options.environment.X402API_HOME,
+      },
+      io: {
+        ...state.options.io,
+        readStdin: async () => `${supervisedSecret}\n`,
+      },
+    };
+
+    expect(
+      await runCli(
+        ["wallet", "setup", "--password-stdin", "--json"],
+        options,
+      ),
+    ).toBe(0);
+    expect(state.stdout.at(-1)).not.toContain(supervisedSecret);
+    expect(
+      await runCli(
+        [
+          "wallet",
+          "create",
+          "--name",
+          "stdin-buyer",
+          "--network",
+          "eip155:8453",
+          "--json",
+        ],
+        options,
+      ),
+    ).toBe(0);
+  });
+
   it("creates and inspects a wallet with JSON-only, secret-free output", async () => {
     const state = await fixture();
     expect(
@@ -112,6 +234,150 @@ describe("agent wallet CLI contract", () => {
     expect(JSON.parse(state.stdout.at(-1)!).error.code).toBe(
       "wallet_storage_unsafe",
     );
+  });
+
+  it("returns exact Base funding deficit and payer-address guidance", async () => {
+    const state = await fixture();
+    const environment = {
+      ...state.options.environment,
+      X402API_BASE_RPC_URL: "http://localhost:8545/",
+    };
+    const options = { ...state.options, environment };
+    expect(
+      await runCli(
+        [
+          "wallet",
+          "create",
+          "--name",
+          "buyer",
+          "--network",
+          "eip155:8453",
+          "--json",
+        ],
+        options,
+      ),
+    ).toBe(0);
+    const created = JSON.parse(state.stdout.at(-1)!);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        const request = JSON.parse(String(init?.body)) as { method: string };
+        if (request.method === "eth_chainId") return rpc("0x2105");
+        if (request.method === "eth_getBalance") return rpc("0x0");
+        return rpc("0xf4240");
+      }),
+    );
+
+    expect(
+      await runCli(
+        [
+          "wallet",
+          "funding",
+          "--wallet",
+          "buyer",
+          "--asset",
+          "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "--target-balance-atomic",
+          "25000000",
+          "--json",
+        ],
+        options,
+      ),
+    ).toBe(0);
+    const funding = JSON.parse(state.stdout.at(-1)!);
+    expect(funding).toMatchObject({
+      status: "funding_required",
+      assetSymbol: "USDC",
+      assetAtomic: "1000000",
+      targetBalanceAtomic: "25000000",
+      targetBalance: "25",
+      deficitAtomic: "24000000",
+      deficit: "24",
+      funding: {
+        destination: created.address,
+        qrPayload: created.address,
+        amountAtomic: "24000000",
+        amount: "24",
+        nativeFeeFundingRequiredForSupportedPayments: false,
+      },
+    });
+    expect(funding.funding.instruction).toContain("payer wallet address");
+    expect(funding.funding.networkFee).toContain("Do not fund ETH or SOL");
+    expect(JSON.stringify(funding)).not.toContain(state.secret);
+  });
+
+  it("checks the exact selected Solana stablecoin when calculating funding", async () => {
+    const state = await fixture();
+    const environment = {
+      ...state.options.environment,
+      X402API_SOLANA_RPC_URL: "http://localhost:8899/",
+    };
+    const options = { ...state.options, environment };
+    expect(
+      await runCli(
+        [
+          "wallet",
+          "create",
+          "--name",
+          "solana-buyer",
+          "--network",
+          "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          "--json",
+        ],
+        options,
+      ),
+    ).toBe(0);
+    const selectedMints: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        const request = JSON.parse(String(init?.body)) as {
+          method: string;
+          params: unknown[];
+        };
+        if (request.method === "getGenesisHash") {
+          return rpc(SOLANA_MAINNET_GENESIS_HASH);
+        }
+        if (request.method === "getBalance") return rpc({ value: 0 });
+        const selection = request.params[1] as { mint: string };
+        selectedMints.push(selection.mint);
+        return rpc({
+          value: [
+            {
+              account: {
+                data: {
+                  parsed: { info: { tokenAmount: { amount: "5000000" } } },
+                },
+              },
+            },
+          ],
+        });
+      }),
+    );
+
+    expect(
+      await runCli(
+        [
+          "wallet",
+          "funding",
+          "--wallet",
+          "solana-buyer",
+          "--asset",
+          SOLANA_USDC_MAINNET_MINT,
+          "--target-balance-atomic",
+          "25000000",
+          "--json",
+        ],
+        options,
+      ),
+    ).toBe(0);
+    expect(selectedMints).toEqual([SOLANA_USDC_MAINNET_MINT]);
+    expect(JSON.parse(state.stdout.at(-1)!)).toMatchObject({
+      asset: SOLANA_USDC_MAINNET_MINT,
+      assetSymbol: "USDC",
+      deficitAtomic: "20000000",
+      deficit: "20",
+    });
   });
 
   it("installs the bundled payment skill without overwriting an existing directory", async () => {

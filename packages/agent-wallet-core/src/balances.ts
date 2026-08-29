@@ -323,6 +323,12 @@ export async function readWalletBalance(options: {
   asset?: string;
 }): Promise<WalletBalance> {
   if (options.network === "eip155:8453") {
+    if (
+      options.asset !== undefined &&
+      options.asset.toLowerCase() !== BASE_USDC_MAINNET_CONTRACT.toLowerCase()
+    ) {
+      throw new AgentWalletError("unsupported_asset", "Base wallet supports only USDC");
+    }
     if (!options.rpc.base) throw new AgentWalletError("rpc_not_configured", "Base RPC is required");
     return baseBalance(validateRpcUrl(options.rpc.base, "Base"), options.address);
   }
@@ -335,6 +341,12 @@ export async function readWalletBalance(options: {
       options.address,
       options.asset,
     );
+  }
+  if (
+    options.asset !== undefined &&
+    options.asset !== TRON_USDT_MAINNET_CONTRACT
+  ) {
+    throw new AgentWalletError("unsupported_asset", "TRON wallet supports only USDT");
   }
   if (!options.rpc.tron) throw new AgentWalletError("rpc_not_configured", "TRON RPC is required");
   return tronBalance(validateRpcUrl(options.rpc.tron, "TRON"), options.address);

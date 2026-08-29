@@ -27,25 +27,32 @@ stored. Merchant tools, including the WarpMetal reference integration, may
 prepare requests and consume artifacts, but they do not host the CLI or receive
 its private keys.
 
-Do not supply a passphrase on the command line. An operator must arrange
-`X402API_WALLET_PASSWORD_FILE` as an owner-only file or supervise
-`--password-stdin`. Never read, print, summarize, or paste that passphrase,
-seed, private key, encrypted keystore, or complete payment signature.
+Do not supply a passphrase on the command line. On a fresh host, run `x402api
+wallet setup --json`; the CLI creates and automatically uses a high-entropy,
+owner-only managed unlock file without printing it or changing a shell profile.
+An operator may instead arrange `X402API_WALLET_PASSWORD_FILE` as an owner-only
+file or supervise `--password-stdin`. Never read, print, summarize, or paste
+that passphrase, seed, private key, encrypted keystore, or complete payment
+signature. The managed file is an automation boundary, not protection from a
+compromised same-user host.
 
 ## Choose or create the wallet
 
 1. Determine the exact accepted network from the merchant challenge.
-2. Run `x402api wallet list --json` and reuse a suitable persistent wallet.
+2. Run `x402api wallet setup --json`, then `x402api wallet list --json`, and
+   reuse a suitable persistent wallet. Repeated setup is safe and must not be
+   replaced with hand-written password-file or shell-profile commands.
 3. Create one only if no suitable configured wallet exists. Never substitute
    an address from another network or create a new wallet merely because an
    order is a renewal.
 4. Treat the funded balance as fully spendable by the autonomous agent, subject
    to any local `maximumPaymentAtomic` per-payment ceiling. That ceiling is not
    a daily, cumulative, or merchant-specific permission.
-5. Show the public address, exact network, supported asset, sponsored native
-   fee currency, and requested token funding amount when funding is
-   insufficient. Never ask the owner to fund ETH/SOL or reveal or import a
-   personal seed.
+5. Run the exact asset-aware `wallet funding` argv provided by the merchant
+   workflow. Show its current, target, and deficit token amounts, public payer
+   address, exact network, asset contract/mint, and QR payload when funding is
+   insufficient. Never ask the owner to fund ETH/SOL, send to the token
+   contract/merchant recipient, or reveal/import a personal seed.
 
 Keep Base, Solana, and TRON keys and addresses separate. TRON wallet management
 does not mean TRON payment support: the launch payer must reject TRON as coming

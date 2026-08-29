@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 
 export type WalletPaths = {
   root: string;
+  unlock: string;
   wallets: string;
   attempts: string;
 };
@@ -22,6 +23,7 @@ export function walletPaths(root = defaultDataRoot()): WalletPaths {
   const absolute = resolve(root);
   return {
     root: absolute,
+    unlock: join(absolute, "wallet.unlock"),
     wallets: join(absolute, "wallets"),
     attempts: join(absolute, "attempts"),
   };

@@ -3,7 +3,6 @@ import {
   lstat,
   mkdir,
   mkdtemp,
-  readFile,
   rename,
   rm,
 } from "node:fs/promises";
@@ -13,6 +12,11 @@ import { fileURLToPath } from "node:url";
 import {
   AgentWalletError,
   AttemptStore,
+  BASE_USDC_MAINNET_CONTRACT,
+  SOLANA_USDC_MAINNET_MINT,
+  SOLANA_USDT_MAINNET_MINT,
+  SUPPORTED_NETWORKS,
+  TRON_USDT_MAINNET_CONTRACT,
   asAgentWalletError,
   authorizePayment,
   backupWallet,
@@ -20,10 +24,13 @@ import {
   defaultDataRoot,
   importWallet,
   listWallets,
+  normalizeWalletPassphrase,
   readWalletBalance,
+  readWalletPassphraseFile,
   readWalletMetadata,
   requestRefillNotification,
   retireWallet,
+  setupWalletUnlock,
   submitAuthorizedPayment,
   walletPaths,
   type RpcConfiguration,
@@ -47,11 +54,13 @@ const HELP = {
   version: 1,
   binary: "x402api",
   commands: [
+    "wallet setup",
     "wallet create --name <name> --network <network>",
     "wallet list",
     "wallet show --wallet <name>",
     "wallet address --wallet <name>",
-    "wallet balance --wallet <name>",
+    "wallet balance --wallet <name> [--asset <asset>]",
+    "wallet funding --wallet <name> --asset <asset> --target-balance-atomic <amount>",
     "wallet notify-refill --wallet <name> --subscription-reference <id> --renew-by <UTC> --target-balance-atomic <amount> --reason <renewal|low_balance>",
     "wallet backup --wallet <name> --output <file>",
     "wallet import --name <name> --input <file>",
@@ -66,7 +75,11 @@ const HELP = {
     "pay --wallet <name> --request-envelope <file> --artifact-out <file>",
     "skill install --output <directory>",
   ],
-  passwordSources: ["--password-stdin", "X402API_WALLET_PASSWORD_FILE"],
+  passwordSources: [
+    "managed wallet setup",
+    "--password-stdin",
+    "X402API_WALLET_PASSWORD_FILE",
+  ],
   rpcEnvironment: [
     "X402API_BASE_RPC_URL",
     "X402API_SOLANA_RPC_URL",
@@ -139,48 +152,11 @@ function rejectUnknown(
   }
 }
 
-async function readPasswordFile(path: string): Promise<string> {
-  const absolute = resolve(path);
-  const stat = await lstat(absolute).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") {
-      throw new AgentWalletError(
-        "password_required",
-        "wallet password file was not found",
-      );
-    }
-    throw error;
-  });
-  if (
-    !stat.isFile() ||
-    stat.isSymbolicLink() ||
-    stat.size < 12 ||
-    stat.size > 4096 ||
-    (process.platform !== "win32" && (stat.mode & 0o077) !== 0) ||
-    (typeof process.getuid === "function" && stat.uid !== process.getuid())
-  ) {
-    throw new AgentWalletError(
-      "wallet_storage_unsafe",
-      "wallet password file must be an owner-only regular file",
-    );
-  }
-  return readFile(absolute, "utf8");
-}
-
-function normalizePassphrase(value: string): string {
-  const normalized = value.replace(/\r?\n$/, "");
-  if (normalized.includes("\n") || normalized.includes("\r")) {
-    throw new AgentWalletError(
-      "password_required",
-      "wallet passphrase must be one line",
-    );
-  }
-  return normalized;
-}
-
 async function passphrase(
   parsed: ParsedArguments,
   io: Io,
   environment: NodeJS.ProcessEnv,
+  managedPasswordFile: string,
 ): Promise<string> {
   const passwordFile = environment.X402API_WALLET_PASSWORD_FILE;
   if (parsed.flags.has("password-stdin") && passwordFile) {
@@ -190,13 +166,10 @@ async function passphrase(
     );
   }
   if (parsed.flags.has("password-stdin"))
-    return normalizePassphrase(await io.readStdin());
+    return normalizeWalletPassphrase(await io.readStdin());
   if (passwordFile)
-    return normalizePassphrase(await readPasswordFile(passwordFile));
-  throw new AgentWalletError(
-    "password_required",
-    "use --password-stdin or X402API_WALLET_PASSWORD_FILE",
-  );
+    return readWalletPassphraseFile(passwordFile);
+  return readWalletPassphraseFile(managedPasswordFile);
 }
 
 function rpcConfiguration(environment: NodeJS.ProcessEnv): RpcConfiguration {
@@ -229,6 +202,97 @@ function publicWallet(
       ? {}
       : { retiredAt: metadata.retiredAt }),
   };
+}
+
+type FundingAsset = {
+  asset: string;
+  assetSymbol: "USDC" | "USDT";
+  decimals: 6;
+};
+
+function fundingAssets(network: SupportedNetwork): FundingAsset[] {
+  if (network === "eip155:8453") {
+    return [
+      {
+        asset: BASE_USDC_MAINNET_CONTRACT,
+        assetSymbol: "USDC",
+        decimals: 6,
+      },
+    ];
+  }
+  if (network === "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp") {
+    return [
+      {
+        asset: SOLANA_USDC_MAINNET_MINT,
+        assetSymbol: "USDC",
+        decimals: 6,
+      },
+      {
+        asset: SOLANA_USDT_MAINNET_MINT,
+        assetSymbol: "USDT",
+        decimals: 6,
+      },
+    ];
+  }
+  return [
+    {
+      asset: TRON_USDT_MAINNET_CONTRACT,
+      assetSymbol: "USDT",
+      decimals: 6,
+    },
+  ];
+}
+
+function walletFundingActions(metadata: {
+  name: string;
+  network: SupportedNetwork;
+}) {
+  return fundingAssets(metadata.network).map((item) => ({
+    ...item,
+    balance: {
+      argv: [
+        "x402api",
+        "wallet",
+        "balance",
+        "--wallet",
+        metadata.name,
+        "--asset",
+        item.asset,
+        "--json",
+      ],
+    },
+    funding: {
+      argv: [
+        "x402api",
+        "wallet",
+        "funding",
+        "--wallet",
+        metadata.name,
+        "--asset",
+        item.asset,
+        "--target-balance-atomic",
+        "<target-balance-atomic>",
+        "--json",
+      ],
+    },
+  }));
+}
+
+function canonicalAtomic(value: string, label: string): bigint {
+  if (!/^(?:0|[1-9][0-9]{0,77})$/.test(value)) {
+    throw new AgentWalletError(
+      "invalid_input",
+      `${label} must be canonical non-negative atomic units`,
+    );
+  }
+  return BigInt(value);
+}
+
+function decimalAmount(value: bigint, decimals = 6): string {
+  const digits = value.toString().padStart(decimals + 1, "0");
+  const whole = digits.slice(0, -decimals);
+  const fraction = digits.slice(-decimals).replace(/0+$/, "");
+  return fraction.length > 0 ? `${whole}.${fraction}` : whole;
 }
 
 async function skillSourceDirectory(): Promise<string> {
@@ -299,6 +363,47 @@ async function dispatch(
     };
   }
   const paths = walletPaths(defaultDataRoot(environment));
+  if (group === "wallet" && action === "setup") {
+    rejectUnknown(parsed, [], ["json", "password-stdin"]);
+    const passwordFile = environment.X402API_WALLET_PASSWORD_FILE ?? paths.unlock;
+    if (parsed.flags.has("password-stdin") && environment.X402API_WALLET_PASSWORD_FILE) {
+      throw new AgentWalletError(
+        "password_required",
+        "configure exactly one wallet password source",
+      );
+    }
+    const setup = await setupWalletUnlock({
+      passwordFile,
+      ...(parsed.flags.has("password-stdin")
+        ? { passphrase: await io.readStdin() }
+        : {}),
+    });
+    return {
+      ...setup,
+      dataRoot: paths.root,
+      passwordSource: environment.X402API_WALLET_PASSWORD_FILE
+        ? "environment_file"
+        : "managed_default_file",
+      supportedNetworks: SUPPORTED_NETWORKS,
+      nextActions: {
+        list: { argv: ["x402api", "wallet", "list", "--json"] },
+        create: {
+          argv: [
+            "x402api",
+            "wallet",
+            "create",
+            "--name",
+            "<wallet-name>",
+            "--network",
+            "<exact-network>",
+            "--maximum-payment-atomic",
+            "<per-payment-policy-cap>",
+            "--json",
+          ],
+        },
+      },
+    };
+  }
   if (group === "wallet" && action === "create") {
     rejectUnknown(
       parsed,
@@ -310,7 +415,7 @@ async function dispatch(
       walletsDirectory: paths.wallets,
       name: required(parsed, "name"),
       network,
-      passphrase: await passphrase(parsed, io, environment),
+      passphrase: await passphrase(parsed, io, environment, paths.unlock),
       ...(parsed.values.has("maximum-payment-atomic")
         ? { maximumPaymentAtomic: required(parsed, "maximum-payment-atomic") }
         : {}),
@@ -319,6 +424,7 @@ async function dispatch(
       ...publicWallet(metadata),
       storage: "local-encrypted-keystore",
       status: "created_unfunded",
+      fundingAssets: walletFundingActions(metadata),
     };
   }
   if (group === "wallet" && action === "list") {
@@ -335,7 +441,7 @@ async function dispatch(
     );
   }
   if (group === "wallet" && action === "balance") {
-    rejectUnknown(parsed, ["wallet"]);
+    rejectUnknown(parsed, ["wallet", "asset"]);
     const metadata = await readWalletMetadata(
       paths.wallets,
       required(parsed, "wallet"),
@@ -344,7 +450,66 @@ async function dispatch(
       network: metadata.network,
       address: metadata.address,
       rpc: rpcConfiguration(environment),
+      ...(parsed.values.has("asset")
+        ? { asset: required(parsed, "asset") }
+        : {}),
     });
+  }
+  if (group === "wallet" && action === "funding") {
+    rejectUnknown(parsed, ["wallet", "asset", "target-balance-atomic"]);
+    const metadata = await readWalletMetadata(
+      paths.wallets,
+      required(parsed, "wallet"),
+    );
+    const balance = await readWalletBalance({
+      network: metadata.network,
+      address: metadata.address,
+      rpc: rpcConfiguration(environment),
+      asset: required(parsed, "asset"),
+    });
+    const target = canonicalAtomic(
+      required(parsed, "target-balance-atomic"),
+      "target balance",
+    );
+    const current = canonicalAtomic(balance.assetAtomic, "current balance");
+    const deficit = target > current ? target - current : 0n;
+    const launchedSponsoredNetwork = metadata.network !== "tron:mainnet";
+    return {
+      ...balance,
+      status: deficit === 0n ? "funded" : "funding_required",
+      assetDecimals: 6,
+      targetBalanceAtomic: target.toString(),
+      targetBalance: decimalAmount(target),
+      deficitAtomic: deficit.toString(),
+      deficit: decimalAmount(deficit),
+      funding: {
+        destination: metadata.address,
+        qrPayload: metadata.address,
+        network: metadata.network,
+        asset: balance.asset,
+        assetSymbol: balance.assetSymbol,
+        amountAtomic: deficit.toString(),
+        amount: decimalAmount(deficit),
+        showQr: true,
+        showAddressString: true,
+        nativeFeeFundingRequiredForSupportedPayments: launchedSponsoredNetwork
+          ? false
+          : null,
+        instruction:
+          deficit === 0n
+            ? "The wallet already meets the requested token balance."
+            : `Transfer ${decimalAmount(deficit)} ${balance.assetSymbol} on ${metadata.network} to the payer wallet address ${metadata.address}. Send the token to the wallet address, not to the token contract or merchant recipient.`,
+        ...(launchedSponsoredNetwork
+          ? {
+              networkFee:
+                "Do not fund ETH or SOL for supported sponsored x402 payments; x402api supplies the network fee.",
+            }
+          : {
+              releaseNotice:
+                "TRON wallet management is available, but public payment authorization is not launched.",
+            }),
+      },
+    };
   }
   if (group === "wallet" && action === "notify-refill") {
     rejectUnknown(
@@ -368,7 +533,7 @@ async function dispatch(
     return requestRefillNotification({
       walletsDirectory: paths.wallets,
       wallet: required(parsed, "wallet"),
-      passphrase: await passphrase(parsed, io, environment),
+      passphrase: await passphrase(parsed, io, environment, paths.unlock),
       rpc: rpcConfiguration(environment),
       notificationUrl,
       subscriptionReference: required(parsed, "subscription-reference"),
@@ -396,7 +561,7 @@ async function dispatch(
       walletsDirectory: paths.wallets,
       name: required(parsed, "name"),
       input: required(parsed, "input"),
-      passphrase: await passphrase(parsed, io, environment),
+      passphrase: await passphrase(parsed, io, environment, paths.unlock),
     });
     return { ...publicWallet(metadata), status: "imported" };
   }
@@ -416,7 +581,7 @@ async function dispatch(
     const metadata = await retireWallet({
       walletsDirectory: paths.wallets,
       name: wallet,
-      passphrase: await passphrase(parsed, io, environment),
+      passphrase: await passphrase(parsed, io, environment, paths.unlock),
       confirmation: required(parsed, "confirm"),
     });
     return { ...publicWallet(metadata), status: "retired" };
@@ -438,7 +603,7 @@ async function dispatch(
       walletsDirectory: paths.wallets,
       attemptsDirectory: paths.attempts,
       wallet: required(parsed, "wallet"),
-      passphrase: await passphrase(parsed, io, environment),
+      passphrase: await passphrase(parsed, io, environment, paths.unlock),
       requestEnvelopePath: required(parsed, "request-envelope"),
       artifactPath: required(parsed, "artifact-out"),
       rpc: rpcConfiguration(environment),
@@ -489,7 +654,7 @@ async function dispatch(
       walletsDirectory: paths.wallets,
       attemptsDirectory: paths.attempts,
       wallet: required(parsed, "wallet"),
-      passphrase: await passphrase(parsed, io, environment),
+      passphrase: await passphrase(parsed, io, environment, paths.unlock),
       requestEnvelopePath,
       artifactPath: required(parsed, "artifact-out"),
       rpc: rpcConfiguration(environment),

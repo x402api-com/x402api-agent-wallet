@@ -12,9 +12,49 @@ from the merchant tenant. A buyer does not need ETH or SOL. TRON wallet
 management remains available, but TRON payment authorization is coming soon
 and cannot be selected or used as a fallback.
 
-> **Release status:** `0.2.4` is the current source and npm release line.
+> **Release status:** `0.2.5` is the current source and npm release line.
 > Production mainnet support remains gated by the capped live evidence and
 > release review described in [SECURITY.md](SECURITY.md).
+
+## First-time wallet setup
+
+The CLI can create its own high-entropy, owner-only unlock file. It never
+prints the passphrase or changes a shell profile:
+
+```bash
+x402api wallet setup --json
+x402api wallet list --json
+```
+
+`wallet setup` is idempotent. By default it writes a managed `0600` unlock
+file under the private x402api data root and subsequent unlocking commands use
+it automatically. `X402API_WALLET_PASSWORD_FILE` remains an explicit file-path
+override, and `--password-stdin` remains available for an operator-supervised
+command. The managed file makes a headless agent operable; it does not protect
+the wallet from another process running as the same compromised OS user.
+
+Create separate wallets for the exact networks an agent will use:
+
+```bash
+x402api wallet create --name agent-base --network eip155:8453 \
+  --maximum-payment-atomic 25000000 --json
+x402api wallet create --name agent-solana \
+  --network solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp \
+  --maximum-payment-atomic 25000000 --json
+```
+
+Use `wallet funding` with the exact live asset and target amount to calculate
+the current deficit and return the payer address as both text and a QR payload:
+
+```bash
+x402api wallet funding --wallet agent-base \
+  --asset 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 \
+  --target-balance-atomic 25000000 --json
+```
+
+Transfer the named token to the returned payer wallet address, never to the
+token contract/mint or merchant recipient. Supported Base and Solana payments
+are sponsored, so the buyer does not fund ETH or SOL.
 
 ## Permissions and spend boundary
 
@@ -33,7 +73,7 @@ x402api wallet create \
 
 The value is canonical atomic units for the supported payment asset. It is a
 per-payment limit, not a daily or cumulative budget, merchant allowlist, or
-hosted policy. Version 0.2.4 has no policy-update command; the ceiling is set
+hosted policy. Version 0.2.5 has no policy-update command; the ceiling is set
 when the wallet is created. Owner-only directories (`0700`) and files (`0600`)
 protect stored material from accidental local exposure, but they do not make a
 compromised same-user host safe.
@@ -66,7 +106,7 @@ is the executable that holds keys, authorizes payments, and safely submits or
 reconciles an exact credential-free request.
 
 ```bash
-npm install --global @x402api/agent-wallet-cli@0.2.4
+npm install --global @x402api/agent-wallet-cli@0.2.5
 x402api skill install --output "$CODEX_HOME/skills/x402api-pay" --json
 ```
 
