@@ -9,7 +9,7 @@ Base, Solana, and TRON.
 
 An optional `maximumPaymentAtomic` value adds a local ceiling to each payment.
 It does not limit aggregate or daily spend, restrict merchants, revoke existing
-artifacts, or protect a wallet on a compromised same-user host. Version 0.2.4
+artifacts, or protect a wallet on a compromised same-user host. Version 0.2.5
 sets this value only when creating a wallet and has no policy-update command.
 
 Show the exact network, token contract or mint, public address, and requested
@@ -22,6 +22,9 @@ never fall back to a buyer-funded transaction or require buyer ETH/SOL.
 
 ## Secret handling
 
+- Use `x402api wallet setup --json` for the managed owner-only unlock file. Do
+  not recreate it with shell redirection, add it to a shell profile, or read it
+  to confirm setup. The returned path and status are safe; its contents are not.
 - Never ask for a seed phrase or private key.
 - Never read or display a password file, keystore, backup contents, or complete
   payment artifact.

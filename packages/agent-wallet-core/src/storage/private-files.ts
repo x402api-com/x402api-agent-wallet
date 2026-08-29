@@ -4,7 +4,6 @@ import {
   link,
   mkdir,
   open,
-  readFile,
   rename,
   unlink,
 } from "node:fs/promises";
@@ -48,32 +47,51 @@ export async function readPrivateFile(
   path: string,
   maximumBytes = 1024 * 1024,
 ): Promise<Buffer> {
-  const stat = await lstat(path).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") {
+  let handle;
+  try {
+    handle = await open(
+      path,
+      constants.O_RDONLY |
+        (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
+    );
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
       throw new AgentWalletError("wallet_not_found", `file not found: ${path}`);
     }
+    if (code === "ELOOP") {
+      throw new AgentWalletError(
+        "wallet_storage_unsafe",
+        `wallet file must not be a symbolic link: ${path}`,
+      );
+    }
     throw error;
-  });
-  if (!stat.isFile() || stat.isSymbolicLink()) {
-    throw new AgentWalletError(
-      "wallet_storage_unsafe",
-      `wallet file is not a regular file: ${path}`,
-    );
   }
-  assertOwner(stat, path);
-  if (process.platform !== "win32" && (stat.mode & 0o077) !== 0) {
-    throw new AgentWalletError(
-      "wallet_storage_unsafe",
-      `wallet file permissions must be 0600: ${path}`,
-    );
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) {
+      throw new AgentWalletError(
+        "wallet_storage_unsafe",
+        `wallet file is not a regular file: ${path}`,
+      );
+    }
+    assertOwner(stat, path);
+    if (process.platform !== "win32" && (stat.mode & 0o077) !== 0) {
+      throw new AgentWalletError(
+        "wallet_storage_unsafe",
+        `wallet file permissions must be 0600: ${path}`,
+      );
+    }
+    if (stat.size < 1 || stat.size > maximumBytes) {
+      throw new AgentWalletError(
+        "wallet_storage_unsafe",
+        `wallet file size is outside the supported bound: ${path}`,
+      );
+    }
+    return await handle.readFile();
+  } finally {
+    await handle.close();
   }
-  if (stat.size < 1 || stat.size > maximumBytes) {
-    throw new AgentWalletError(
-      "wallet_storage_unsafe",
-      `wallet file size is outside the supported bound: ${path}`,
-    );
-  }
-  return readFile(path);
 }
 
 export async function atomicWritePrivate(

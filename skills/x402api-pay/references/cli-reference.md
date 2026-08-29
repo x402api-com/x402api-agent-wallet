@@ -7,7 +7,9 @@ is present and uses a stable nonzero exit code.
 ## Environment
 
 - `X402API_HOME`: optional local data root.
-- `X402API_WALLET_PASSWORD_FILE`: owner-only, single-line passphrase file.
+- `X402API_WALLET_PASSWORD_FILE`: optional owner-only, single-line passphrase
+  file override. Without it, unlocking uses the managed file created by
+  `wallet setup`.
 - `X402API_BASE_RPC_URL`: credential-free Base RPC URL.
 - `X402API_SOLANA_RPC_URL`: credential-free Solana RPC URL.
 - `X402API_TRON_RPC_URL`: credential-free TRON RPC URL.
@@ -20,11 +22,13 @@ these URLs.
 ## Wallet commands
 
 ```text
+x402api wallet setup --json
 x402api wallet create --name NAME --network NETWORK [--maximum-payment-atomic N] --json
 x402api wallet list --json
 x402api wallet show --wallet NAME --json
 x402api wallet address --wallet NAME --json
-x402api wallet balance --wallet NAME --json
+x402api wallet balance --wallet NAME [--asset ASSET] --json
+x402api wallet funding --wallet NAME --asset ASSET --target-balance-atomic N --json
 x402api wallet backup --wallet NAME --output FILE --json
 x402api wallet import --name NAME --input FILE --json
 x402api wallet retire --wallet NAME --confirm NAME --json
@@ -34,13 +38,21 @@ x402api wallet sweep --wallet NAME --to ADDRESS --json
 `--maximum-payment-atomic` is an optional canonical decimal in atomic units for
 the wallet's supported payment asset. It is enforced on each authorization and
 returns `payment_limit_exceeded` when the exact amount is larger. It is not a
-daily or cumulative budget. Version 0.2.4 sets it only at wallet creation and
+daily or cumulative budget. Version 0.2.5 sets it only at wallet creation and
 does not provide a policy-update command.
 
-Unlocking commands additionally require `X402API_WALLET_PASSWORD_FILE` or an
-operator-supervised `--password-stdin`. Supported V1 networks are
+On a fresh host, `wallet setup` atomically creates one high-entropy managed
+unlock file with owner-only permissions. Repeating setup validates and reuses
+the file; it never overwrites or prints the passphrase. An explicit
+`X402API_WALLET_PASSWORD_FILE` path or operator-supervised `--password-stdin`
+remains available. Supported V1 networks are
 `eip155:8453`, `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`, and
 `tron:mainnet`.
+
+For Solana, pass the exact USDC or USDT mint to `balance` and `funding`.
+`wallet funding` reports current, target, and deficit amounts in atomic and
+normal six-decimal token units. Its destination and QR payload are always the
+payer wallet public address. A wrong asset fails closed before an RPC request.
 
 ## Refill notification
 

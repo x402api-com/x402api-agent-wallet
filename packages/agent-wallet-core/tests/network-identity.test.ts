@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  BASE_USDC_MAINNET_CONTRACT,
   readWalletBalance,
   SOLANA_MAINNET_GENESIS_HASH,
   TRON_MAINNET_GENESIS_BLOCK_ID,
@@ -17,6 +18,20 @@ function json(result: unknown): Response {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("RPC network identity", () => {
+  it("rejects a wrong Base asset before making an RPC request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      readWalletBalance({
+        network: "eip155:8453",
+        address: "0x1111111111111111111111111111111111111111",
+        asset: `${BASE_USDC_MAINNET_CONTRACT.slice(0, -1)}4`,
+        rpc: { base: "http://localhost:8545/" },
+      }),
+    ).rejects.toMatchObject({ code: "unsupported_asset" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rejects a non-Base EVM endpoint before reporting balances", async () => {
     vi.stubGlobal(
       "fetch",
