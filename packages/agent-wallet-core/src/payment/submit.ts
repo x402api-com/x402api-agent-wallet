@@ -34,6 +34,7 @@ export type SubmissionResult = {
   responseBodyPath?: string;
   transaction?: string;
   network?: string;
+  paymentId?: string;
 };
 
 async function boundedResponseBody(response: Response): Promise<Uint8Array> {
@@ -94,6 +95,45 @@ function responseErrorCode(body: Uint8Array): string | undefined {
       return undefined;
     const code = (error as Record<string, unknown>).code;
     return typeof code === "string" && ERROR_CODE.test(code) ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function responsePaymentId(body: Uint8Array): string | undefined {
+  if (body.byteLength === 0) return undefined;
+  try {
+    const parsed = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(body),
+    ) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      return undefined;
+    const document = parsed as Record<string, unknown>;
+    const error = document.error;
+    const detail =
+      typeof error === "object" && error !== null && !Array.isArray(error)
+        ? (error as Record<string, unknown>).detail
+        : undefined;
+    const structuredDetail =
+      typeof detail === "object" && detail !== null && !Array.isArray(detail)
+        ? (detail as Record<string, unknown>)
+        : undefined;
+    const candidates = [
+      document.paymentId,
+      document.payment_id,
+      structuredDetail?.paymentId,
+      structuredDetail?.payment_id,
+    ].filter((value): value is string => typeof value === "string");
+    const unique = [...new Set(candidates)];
+    if (
+      unique.length !== 1 ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+        unique[0]!,
+      )
+    ) {
+      return undefined;
+    }
+    return unique[0];
   } catch {
     return undefined;
   }
@@ -240,6 +280,25 @@ export async function submitAuthorizedPayment(options: {
     }
     const errorCode =
       paymentResponse?.errorReason ?? responseErrorCode(responseBody);
+    const paymentId = responsePaymentId(responseBody);
+    if (
+      paymentId !== undefined &&
+      record.lastPaymentId !== undefined &&
+      paymentId !== record.lastPaymentId
+    ) {
+      await store.updateState(record.attemptId, ambiguousState);
+      throw new AgentWalletError(
+        "request_binding_mismatch",
+        "merchant changed the durable payment ID for an exact payment retry",
+        {
+          details: {
+            attemptId: record.attemptId,
+            paymentId: record.lastPaymentId,
+            action: "reconcile_existing_attempt",
+          },
+        },
+      );
+    }
     const common = {
       attemptId: record.attemptId,
       httpStatus: response.status,
@@ -248,6 +307,7 @@ export async function submitAuthorizedPayment(options: {
         ? {}
         : { paymentResponse: encodedPaymentResponse }),
       ...(errorCode === undefined ? {} : { errorCode }),
+      ...(paymentId === undefined ? {} : { paymentId }),
     };
 
     if (
@@ -276,6 +336,9 @@ export async function submitAuthorizedPayment(options: {
         ...(paymentResponse.network.length === 0
           ? {}
           : { network: paymentResponse.network }),
+        ...(updated.lastPaymentId === undefined
+          ? {}
+          : { paymentId: updated.lastPaymentId }),
       };
     }
 
@@ -295,6 +358,7 @@ export async function submitAuthorizedPayment(options: {
             responseEvidencePath: updated.lastResponseEvidencePath,
             responseBodyPath: updated.lastResponseBodyPath,
             action: "reconcile_existing_attempt",
+            paymentId: updated.lastPaymentId,
           },
         },
       );
@@ -332,6 +396,7 @@ export async function submitAuthorizedPayment(options: {
               httpStatus: response.status,
               responseEvidencePath: updated.lastResponseEvidencePath,
               action: "reconcile_existing_attempt",
+              paymentId: updated.lastPaymentId,
             },
           },
         );
@@ -391,6 +456,7 @@ export async function submitAuthorizedPayment(options: {
           responseBodyPath: updated.lastResponseBodyPath,
           retryAfterSeconds: retryAfterSeconds(response),
           action: "retry_exact_payment_request",
+          paymentId: updated.lastPaymentId,
         },
       },
     );

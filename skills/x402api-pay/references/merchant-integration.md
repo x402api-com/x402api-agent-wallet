@@ -50,6 +50,11 @@ That operation belongs to trusted merchant server code—not this wallet.
 - Retiring or replacing a template is a merchant concern. The wallet validates
   the exact issued challenge and must not discover, guess, or rewrite a
   template UUID.
+- After authorization, trusted merchant code submits the exact artifact to
+  `POST /v1/charges/{charge_id}/payments` with its tenant API credential. The
+  wallet never receives that credential. The merchant should return the
+  durable `payment_id` as `paymentId` so the wallet can retain it across `202`,
+  `503`, process restart, and exact reconciliation.
 
 See the tenant integration guide at
 https://x402api.com/docs/payments/x402/programmatic-charges.

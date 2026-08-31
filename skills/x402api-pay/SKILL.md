@@ -130,6 +130,10 @@ the exact artifact and buyer payment identifier. Never authorize the same
 request again merely because a submission result is unknown. Local abandonment
 does not revoke a signature or reverse settlement.
 
+When `payment status` includes `lastPaymentId`, preserve it as the merchant's
+durable reconciliation handle. It is public settlement metadata, not a new
+authorization, and it never permits replacing the existing artifact.
+
 Stop on unsupported profiles, changed request bytes, corrupt artifacts,
 expired challenges, unexpected recipients, or contradictory settlement data.
 Do not work around these errors by changing networks, assets, wallets, or
