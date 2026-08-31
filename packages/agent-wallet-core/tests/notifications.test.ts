@@ -129,7 +129,7 @@ describe("refill notification intents", () => {
           const method = body.method;
           if (method === "eth_chainId") return jsonRpcResponse("0x2105");
           if (method === "eth_getBalance") return jsonRpcResponse("0x1");
-          return jsonRpcResponse("0x3d090");
+          return jsonRpcResponse(`0x${"3d090".padStart(64, "0")}`);
         }
         notificationBodies.push(body);
         return new Response(

@@ -10,7 +10,10 @@ is present and uses a stable nonzero exit code.
 - `X402API_WALLET_PASSWORD_FILE`: optional owner-only, single-line passphrase
   file override. Without it, unlocking uses the managed file created by
   `wallet setup`.
-- `X402API_BASE_RPC_URL`: credential-free Base RPC URL.
+- `X402API_BASE_RPC_URL`: credential-free Base RPC URL. For one-off interactive
+  balance and funding checks, Base documents `https://mainnet.base.org` as its
+  official Base Mainnet endpoint. It is rate-limited and is not intended for
+  sustained production traffic.
 - `X402API_SOLANA_RPC_URL`: credential-free Solana RPC URL.
 - `X402API_TRON_RPC_URL`: credential-free TRON RPC URL.
 - `X402API_NOTIFICATION_URL`: credential-free x402api refill endpoint.
@@ -38,7 +41,7 @@ x402api wallet sweep --wallet NAME --to ADDRESS --json
 `--maximum-payment-atomic` is an optional canonical decimal in atomic units for
 the wallet's supported payment asset. It is enforced on each authorization and
 returns `payment_limit_exceeded` when the exact amount is larger. It is not a
-daily or cumulative budget. Version 0.2.5 sets it only at wallet creation and
+daily or cumulative budget. Version 0.2.6 sets it only at wallet creation and
 does not provide a policy-update command.
 
 On a fresh host, `wallet setup` atomically creates one high-entropy managed

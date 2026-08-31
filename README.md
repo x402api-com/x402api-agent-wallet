@@ -12,7 +12,7 @@ from the merchant tenant. A buyer does not need ETH or SOL. TRON wallet
 management remains available, but TRON payment authorization is coming soon
 and cannot be selected or used as a fallback.
 
-> **Release status:** `0.2.5` is the current source and npm release line.
+> **Release status:** `0.2.6` is the current source and npm release line.
 > Production mainnet support remains gated by the capped live evidence and
 > release review described in [SECURITY.md](SECURITY.md).
 
@@ -73,7 +73,7 @@ x402api wallet create \
 
 The value is canonical atomic units for the supported payment asset. It is a
 per-payment limit, not a daily or cumulative budget, merchant allowlist, or
-hosted policy. Version 0.2.5 has no policy-update command; the ceiling is set
+hosted policy. Version 0.2.6 has no policy-update command; the ceiling is set
 when the wallet is created. Owner-only directories (`0700`) and files (`0600`)
 protect stored material from accidental local exposure, but they do not make a
 compromised same-user host safe.
@@ -106,7 +106,7 @@ is the executable that holds keys, authorizes payments, and safely submits or
 reconciles an exact credential-free request.
 
 ```bash
-npm install --global @x402api/agent-wallet-cli@0.2.5
+npm install --global @x402api/agent-wallet-cli@0.2.6
 x402api skill install --output "$CODEX_HOME/skills/x402api-pay" --json
 ```
 

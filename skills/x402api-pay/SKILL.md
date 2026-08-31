@@ -53,6 +53,10 @@ compromised same-user host.
    address, exact network, asset contract/mint, and QR payload when funding is
    insufficient. Never ask the owner to fund ETH/SOL, send to the token
    contract/merchant recipient, or reveal/import a personal seed.
+6. For a one-off Base wallet balance or funding check, if the operator has not
+   supplied a credential-free Base RPC, set `X402API_BASE_RPC_URL` to the
+   official Base Mainnet endpoint `https://mainnet.base.org`. It is rate-limited
+   and suitable for interactive setup checks, not sustained production traffic.
 
 Keep Base, Solana, and TRON keys and addresses separate. TRON wallet management
 does not mean TRON payment support: the launch payer must reject TRON as coming

@@ -104,6 +104,13 @@ function hexQuantity(value: unknown, field: string): bigint {
   return BigInt(value);
 }
 
+function abiUint256(value: unknown, field: string): bigint {
+  if (typeof value !== "string" || !/^0x[0-9a-f]{64}$/i.test(value)) {
+    throw new AgentWalletError("rpc_unavailable", `${field} is not a canonical uint256 ABI word`);
+  }
+  return BigInt(value);
+}
+
 async function baseBalance(endpoint: string, address: string): Promise<WalletBalance> {
   const paddedAddress = address.toLowerCase().replace(/^0x/, "").padStart(64, "0");
   const [chainId, native, token] = await Promise.all([
@@ -126,7 +133,7 @@ async function baseBalance(endpoint: string, address: string): Promise<WalletBal
     address,
     asset: BASE_USDC_MAINNET_CONTRACT,
     assetSymbol: "USDC",
-    assetAtomic: hexQuantity(token, "USDC balance").toString(),
+    assetAtomic: abiUint256(token, "USDC balance").toString(),
     nativeSymbol: "ETH",
     nativeAtomic: hexQuantity(native, "ETH balance").toString(),
     checkedAt: new Date().toISOString(),
