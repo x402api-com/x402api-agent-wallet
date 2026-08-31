@@ -1,6 +1,6 @@
 {
   "name": "@x402api/agent-wallet-core",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Persistent encrypted agent wallets and exact x402 payment authorization.",
   "license": "MIT",
   "repository": {

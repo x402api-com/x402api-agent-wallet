@@ -1,7 +1,8 @@
 # x402api Agent Wallet CLI and Skill Plan
 
 **Status:** Historical design record with earlier implementation snapshots;
-0.2.6 fixes Base USDC ABI balance decoding; 0.2.5 added managed local unlock
+0.2.7 preserves durable merchant payment IDs across ambiguous exact retries;
+0.2.6 fixed Base USDC ABI balance decoding; 0.2.5 added managed local unlock
 setup and structured funding guidance while production mainnet support remains
 release-gated
 

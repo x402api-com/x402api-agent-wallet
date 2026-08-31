@@ -39,6 +39,7 @@ export type AttemptRecord = {
   lastResponseBodyPath?: string;
   lastPaymentResponseDigest?: string;
   lastErrorCode?: string;
+  lastPaymentId?: string;
 };
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
@@ -81,6 +82,7 @@ function parseRecord(value: unknown): AttemptRecord {
     "lastResponseBodyPath",
     "lastPaymentResponseDigest",
     "lastErrorCode",
+    "lastPaymentId",
   ];
   if (
     Object.keys(record).some((key) => !keys.includes(key)) ||
@@ -125,7 +127,12 @@ function parseRecord(value: unknown): AttemptRecord {
     (record.lastErrorCode !== undefined &&
       (typeof record.lastErrorCode !== "string" ||
         record.lastErrorCode.length < 1 ||
-        record.lastErrorCode.length > 128))
+        record.lastErrorCode.length > 128)) ||
+    (record.lastPaymentId !== undefined &&
+      (typeof record.lastPaymentId !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+          record.lastPaymentId,
+        )))
   ) {
     throw new AgentWalletError(
       "payment_artifact_corrupt",
@@ -502,6 +509,7 @@ export class AttemptStore {
     responseBody: Uint8Array;
     paymentResponse?: string;
     errorCode?: string;
+    paymentId?: string;
   }): Promise<AttemptRecord> {
     if (
       !Number.isSafeInteger(options.httpStatus) ||
@@ -510,7 +518,26 @@ export class AttemptStore {
     ) {
       throw new AgentWalletError("invalid_input", "HTTP status is invalid");
     }
+    if (
+      options.paymentId !== undefined &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+        options.paymentId,
+      )
+    ) {
+      throw new AgentWalletError("invalid_input", "payment ID is invalid");
+    }
     await this.initialize();
+    const current = await this.get(options.attemptId);
+    if (
+      current.lastPaymentId !== undefined &&
+      options.paymentId !== undefined &&
+      current.lastPaymentId !== options.paymentId
+    ) {
+      throw new AgentWalletError(
+        "request_binding_mismatch",
+        "merchant changed the durable payment ID for an exact payment attempt",
+      );
+    }
     const responseId = randomUUID();
     const responseDigest = digestBytes(options.responseBody);
     const responseBodyPath =
@@ -541,13 +568,13 @@ export class AttemptStore {
           paymentResponse: options.paymentResponse ?? null,
           paymentResponseDigest: paymentResponseDigest ?? null,
           errorCode: options.errorCode ?? null,
+          paymentId: options.paymentId ?? null,
           state: options.state,
         },
         null,
         2,
       )}\n`,
     );
-    const current = await this.get(options.attemptId);
     const updated: AttemptRecord = {
       ...current,
       state: options.state,
@@ -567,6 +594,9 @@ export class AttemptStore {
     }
     if (options.errorCode !== undefined) {
       updated.lastErrorCode = options.errorCode;
+    }
+    if (options.paymentId !== undefined) {
+      updated.lastPaymentId = options.paymentId;
     }
     await atomicWritePrivate(
       join(this.records, `${options.attemptId}.json`),

@@ -146,6 +146,7 @@ describe("exact paid request submission", () => {
 
   it("preserves a pending attempt and reuses the exact signature", async () => {
     const state = await fixture();
+    const paymentId = "01a058bf-e141-7f5b-9cf3-e056e9e43130";
     const seenSignatures: string[] = [];
     const fetchImplementation = vi
       .fn<typeof fetch>()
@@ -153,7 +154,9 @@ describe("exact paid request submission", () => {
         seenSignatures.push(
           new Headers(init?.headers).get("PAYMENT-SIGNATURE")!,
         );
-        return new Response('{"status":"payment_pending"}', {
+        return new Response(
+          JSON.stringify({ status: "payment_pending", paymentId }),
+          {
           status: 202,
           headers: {
             "PAYMENT-RESPONSE": paymentResponse({
@@ -163,8 +166,9 @@ describe("exact paid request submission", () => {
               network: "eip155:8453",
             }),
             "Retry-After": "2",
+            },
           },
-        });
+        );
       })
       .mockImplementationOnce(async (_url, init) => {
         seenSignatures.push(
@@ -193,10 +197,12 @@ describe("exact paid request submission", () => {
     ).rejects.toMatchObject({
       code: "settlement_outcome_unknown",
       retryable: true,
+      details: { paymentId },
     });
-    expect((await state.store.get(state.record.attemptId)).state).toBe(
-      "pending",
-    );
+    expect(await state.store.get(state.record.attemptId)).toMatchObject({
+      state: "pending",
+      lastPaymentId: paymentId,
+    });
 
     await expect(
       submitAuthorizedPayment({
@@ -211,6 +217,104 @@ describe("exact paid request submission", () => {
       state.artifact.paymentSignature,
       state.artifact.paymentSignature,
     ]);
+  });
+
+  it("preserves the durable payment ID and exact artifact after HTTP 503", async () => {
+    const state = await fixture();
+    const paymentId = "01a058bf-e141-7f5b-9cf3-e056e9e43131";
+    const fetchImplementation = vi.fn(async (_url, init) => {
+      expect(new Headers(init?.headers).get("PAYMENT-SIGNATURE")).toBe(
+        state.artifact.paymentSignature,
+      );
+      return Response.json(
+        {
+          error: { code: "payment_outcome_unavailable" },
+          paymentId,
+        },
+        {
+          status: 503,
+          headers: { "Retry-After": "2" },
+        },
+      );
+    });
+
+    await expect(
+      submitAuthorizedPayment({
+        attemptsDirectory: state.attemptsDirectory,
+        attemptId: state.record.attemptId,
+        requestEnvelopePath: state.requestEnvelopePath,
+        fetchImplementation,
+        now: new Date("2026-08-22T20:01:00.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      code: "settlement_outcome_unknown",
+      retryable: true,
+      details: {
+        paymentId,
+        retryAfterSeconds: 2,
+        action: "retry_exact_payment_request",
+      },
+    });
+    expect(await state.store.get(state.record.attemptId)).toMatchObject({
+      state: "pending",
+      lastHttpStatus: 503,
+      lastPaymentId: paymentId,
+    });
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a changed durable payment ID across an exact retry", async () => {
+    const state = await fixture();
+    const firstPaymentId = "01a058bf-e141-7f5b-9cf3-e056e9e43132";
+    const changedPaymentId = "01a058bf-e141-7f5b-9cf3-e056e9e43133";
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { status: "payment_pending", paymentId: firstPaymentId },
+          { status: 202, headers: { "Retry-After": "2" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          { status: "payment_pending", paymentId: changedPaymentId },
+          { status: 202, headers: { "Retry-After": "2" } },
+        ),
+      );
+
+    await expect(
+      submitAuthorizedPayment({
+        attemptsDirectory: state.attemptsDirectory,
+        attemptId: state.record.attemptId,
+        requestEnvelopePath: state.requestEnvelopePath,
+        fetchImplementation,
+        now: new Date("2026-08-22T20:01:00.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      code: "settlement_outcome_unknown",
+      details: { paymentId: firstPaymentId },
+    });
+
+    await expect(
+      submitAuthorizedPayment({
+        attemptsDirectory: state.attemptsDirectory,
+        attemptId: state.record.attemptId,
+        requestEnvelopePath: state.requestEnvelopePath,
+        fetchImplementation,
+        now: new Date("2026-08-22T20:01:03.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      code: "request_binding_mismatch",
+      retryable: false,
+      details: {
+        paymentId: firstPaymentId,
+        action: "reconcile_existing_attempt",
+      },
+    });
+    expect(await state.store.get(state.record.attemptId)).toMatchObject({
+      state: "pending",
+      lastPaymentId: firstPaymentId,
+    });
   });
 
   it("routes retryable gas-treasury rejection without creating a new attempt", async () => {
