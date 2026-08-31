@@ -1,8 +1,9 @@
 # x402api Agent Wallet CLI and Skill Plan
 
 **Status:** Historical design record with earlier implementation snapshots;
-0.2.5 adds managed local unlock setup and structured funding guidance while
-production mainnet support remains release-gated
+0.2.6 fixes Base USDC ABI balance decoding; 0.2.5 added managed local unlock
+setup and structured funding guidance while production mainnet support remains
+release-gated
 
 **Date:** 2026-08-19; launch amendment 2026-08-22; status verified 2026-08-26
 
@@ -18,7 +19,7 @@ merchant integration contract
 **Implementation baseline:** public agent-wallet protocol code extracted from
 the private hosted-platform packages listed in `source-provenance.md`
 
-## Current 0.2.5 onboarding amendment
+## 0.2.5 onboarding amendment
 
 - `x402api wallet setup --json` atomically creates and automatically uses one
   high-entropy owner-only unlock file under the private data root. It is

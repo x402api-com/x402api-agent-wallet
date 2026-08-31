@@ -264,7 +264,7 @@ describe("agent wallet CLI contract", () => {
         const request = JSON.parse(String(init?.body)) as { method: string };
         if (request.method === "eth_chainId") return rpc("0x2105");
         if (request.method === "eth_getBalance") return rpc("0x0");
-        return rpc("0xf4240");
+        return rpc(`0x${"0".repeat(64)}`);
       }),
     );
 
@@ -288,16 +288,16 @@ describe("agent wallet CLI contract", () => {
     expect(funding).toMatchObject({
       status: "funding_required",
       assetSymbol: "USDC",
-      assetAtomic: "1000000",
+      assetAtomic: "0",
       targetBalanceAtomic: "25000000",
       targetBalance: "25",
-      deficitAtomic: "24000000",
-      deficit: "24",
+      deficitAtomic: "25000000",
+      deficit: "25",
       funding: {
         destination: created.address,
         qrPayload: created.address,
-        amountAtomic: "24000000",
-        amount: "24",
+        amountAtomic: "25000000",
+        amount: "25",
         nativeFeeFundingRequiredForSupportedPayments: false,
       },
     });
