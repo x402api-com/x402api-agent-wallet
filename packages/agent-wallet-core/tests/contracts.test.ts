@@ -36,7 +36,7 @@ function envelope() {
     contentType: "application/json",
     bodyBase64: Buffer.from('{"report":"q2"}', "utf8").toString("base64"),
     paymentRequired: encodePaymentRequiredHeader(paymentRequired),
-    challengeDigest: digestJson(paymentRequired as never),
+    challengeDigest: `sha256:${"6".repeat(64)}`,
     merchantReference: "order_123",
   } as const;
 }
@@ -67,5 +67,14 @@ describe("request envelope contract", () => {
     expect(() => parseRequestEnvelope({ ...envelope(), bodyBase64: "ZE==" })).toThrow(
       /canonical base64/,
     );
+  });
+
+  it("rejects a challenge digest derived from PAYMENT-REQUIRED", () => {
+    expect(() =>
+      parseRequestEnvelope({
+        ...envelope(),
+        challengeDigest: digestJson(paymentRequired as never),
+      }),
+    ).toThrow(/authoritative merchant charge response/);
   });
 });

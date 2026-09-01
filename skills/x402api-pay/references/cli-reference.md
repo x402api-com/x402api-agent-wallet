@@ -41,7 +41,7 @@ x402api wallet sweep --wallet NAME --to ADDRESS --json
 `--maximum-payment-atomic` is an optional canonical decimal in atomic units for
 the wallet's supported payment asset. It is enforced on each authorization and
 returns `payment_limit_exceeded` when the exact amount is larger. It is not a
-daily or cumulative budget. Version 0.2.7 sets it only at wallet creation and
+daily or cumulative budget. Version 0.2.8 sets it only at wallet creation and
 does not provide a policy-update command.
 
 On a fresh host, `wallet setup` atomically creates one high-entropy managed

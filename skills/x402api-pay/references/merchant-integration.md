@@ -31,6 +31,10 @@ integration. It is not the buyer payment identifier, does not affect the token
 authorization, and must not be added to this exact V1 envelope. The wallet
 creates its own `buyerPaymentIdentifier` when it authorizes a selected payment
 requirement.
+`challengeDigest` is the authoritative `charge_digest` returned by x402api
+programmatic charge creation. Copy it unchanged. Do not derive it from
+`PAYMENT-REQUIRED`; that hash is not the frozen server challenge and the wallet
+rejects it before signing.
 
 ## Programmatic charge handoff
 
@@ -45,7 +49,8 @@ That operation belongs to trusted merchant server code—not this wallet.
   exact runtime amounts for a non-empty subset; the wallet independently
   validates and selects one returned `PAYMENT-REQUIRED.accepts` alternative.
 - The request envelope receives only the exact credential-free protected
-  request and canonical `PAYMENT-REQUIRED` challenge. It never contains the
+  request, canonical `PAYMENT-REQUIRED` challenge, and authoritative
+  `charge_digest` mapped to `challengeDigest`. It never contains the
   tenant API credential, `resource_version_id`, or a tenant-side API request.
 - Retiring or replacing a template is a merchant concern. The wallet validates
   the exact issued challenge and must not discover, guess, or rewrite a

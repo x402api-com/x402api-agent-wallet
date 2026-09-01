@@ -1,7 +1,8 @@
 # x402api Agent Wallet CLI and Skill Plan
 
 **Status:** Historical design record with earlier implementation snapshots;
-0.2.7 preserves durable merchant payment IDs across ambiguous exact retries;
+0.2.8 preserves durable merchant payment IDs across ambiguous exact retries
+and rejects locally derived challenge digests before signing;
 0.2.6 fixed Base USDC ABI balance decoding; 0.2.5 added managed local unlock
 setup and structured funding guidance while production mainnet support remains
 release-gated
@@ -571,8 +572,10 @@ Rules:
 
 - `method`, normalized URL, content type, and exact body bytes are mandatory;
 - the decoded x402 resource must match the request;
-- `challengeDigest` is mandatory, canonical lowercase SHA-256, and is passed
+- `challengeDigest` is mandatory, canonical lowercase SHA-256, is copied
+  unchanged from the authoritative merchant charge response, and is passed
   unchanged into profiles that commit to the server challenge;
+- a digest derived from `PAYMENT-REQUIRED` is rejected before signing;
 - headers unrelated to x402 request binding are omitted;
 - authorization tokens, cookies, SSH keys, and merchant owner tokens are
   prohibited;

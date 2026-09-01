@@ -1,6 +1,6 @@
 # x402api Agent Wallet
 
-> Open-source persistent local agent-wallet CLI and portable skill for exact x402 payments. Version 0.2.7 preserves merchant-returned durable payment IDs across asynchronous and ambiguous exact retries, correctly decodes Base USDC ABI balance results, and authorizes only sponsored Base USDC and sponsored Solana USDC/USDT payments.
+> Open-source persistent local agent-wallet CLI and portable skill for exact x402 payments. Version 0.2.8 rejects non-authoritative challenge digests before signing, preserves merchant-returned durable payment IDs across asynchronous and ambiguous exact retries, correctly decodes Base USDC ABI balance results, and authorizes only sponsored Base USDC and sponsored Solana USDC/USDT payments.
 
 The `x402api` CLI runs on the buyer or agent host and keeps encrypted private
 keys there. It is not hosted by or running inside WarpMetal; WarpMetal is a
