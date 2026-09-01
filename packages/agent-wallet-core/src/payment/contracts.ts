@@ -153,6 +153,15 @@ export function parseRequestEnvelope(value: unknown): {
       "PAYMENT-REQUIRED resource does not match the exact request URL",
     );
   }
+  if (
+    envelope.challengeDigest ===
+    digestJson(paymentRequired as unknown as JsonObject)
+  ) {
+    throw new AgentWalletError(
+      "request_binding_mismatch",
+      "challengeDigest must come from the authoritative merchant charge response, not a hash of PAYMENT-REQUIRED",
+    );
+  }
   return {
     envelope,
     paymentRequired,

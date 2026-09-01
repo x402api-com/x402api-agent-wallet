@@ -13,7 +13,7 @@ The CLI runs on the buyer or agent host; merchant integrations do not host it
 or receive its keys. A wallet's funded token balance is spend authority, and
 `wallet create --maximum-payment-atomic N` can add a per-payment ceiling. The
 ceiling is not a daily, cumulative, or merchant-specific permission and cannot
-be updated in place in version 0.2.7.
+be updated in place in version 0.2.8.
 
 Run `x402api wallet setup --json` once on a fresh host. It idempotently creates
 a high-entropy managed unlock file under the private x402api data root; the

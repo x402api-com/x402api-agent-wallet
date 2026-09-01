@@ -12,7 +12,7 @@ from the merchant tenant. A buyer does not need ETH or SOL. TRON wallet
 management remains available, but TRON payment authorization is coming soon
 and cannot be selected or used as a fallback.
 
-> **Release status:** `0.2.7` is the current source and npm release line.
+> **Release status:** `0.2.8` is the current source and npm release line.
 > Production mainnet support remains gated by the capped live evidence and
 > release review described in [SECURITY.md](SECURITY.md).
 
@@ -73,7 +73,7 @@ x402api wallet create \
 
 The value is canonical atomic units for the supported payment asset. It is a
 per-payment limit, not a daily or cumulative budget, merchant allowlist, or
-hosted policy. Version 0.2.7 has no policy-update command; the ceiling is set
+hosted policy. Version 0.2.8 has no policy-update command; the ceiling is set
 when the wallet is created. Owner-only directories (`0700`) and files (`0600`)
 protect stored material from accidental local exposure, but they do not make a
 compromised same-user host safe.
@@ -106,7 +106,7 @@ is the executable that holds keys, authorizes payments, and safely submits or
 reconciles an exact credential-free request.
 
 ```bash
-npm install --global @x402api/agent-wallet-cli@0.2.7
+npm install --global @x402api/agent-wallet-cli@0.2.8
 x402api skill install --output "$CODEX_HOME/skills/x402api-pay" --json
 ```
 
@@ -128,7 +128,10 @@ For programmatic charges, the trusted merchant server—not the Agent Wallet—u
 the current resource `active_version.id` with `POST /v1/charges`, then submits
 the authorized artifact with `POST /v1/charges/{charge_id}/payments`. The
 wallet receives only the resulting credential-free exact request and canonical
-`PAYMENT-REQUIRED` challenge. When the merchant returns a durable `paymentId`
+`PAYMENT-REQUIRED`, plus the authoritative `charge_digest` returned by charge
+creation. The merchant maps that value unchanged to `challengeDigest`; hashing
+`PAYMENT-REQUIRED` produces a different digest and is rejected before signing.
+When the merchant returns a durable `paymentId`
 on an asynchronous or ambiguous response, the wallet preserves it with the
 same attempt for reconciliation. See the
 [merchant integration reference](skills/x402api-pay/references/merchant-integration.md).
