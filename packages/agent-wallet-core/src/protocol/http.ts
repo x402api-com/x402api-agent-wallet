@@ -35,9 +35,40 @@ export type ExtensionDeclaration = {
 };
 
 export const GAS_SPONSORSHIP_EXTENSION = "com.x402api.gas-sponsorship";
+export const SETTLEMENT_STATUS_EXTENSION = "com.k1hub.settlement-status";
 const BASE_USDC_SPONSORED_PROFILE =
   "com.x402api.x402.base-usdc-eip3009-sponsored.v1";
 const SOLANA_SPONSORED_PROFILE = "com.x402api.x402.solana-sponsored.v1";
+
+export const SETTLEMENT_STATES = [
+  "created",
+  "verifying",
+  "verified",
+  "reserved",
+  "broadcasting",
+  "broadcast_unknown",
+  "broadcast",
+  "confirming",
+  "confirmed",
+  "finalized",
+  "rejected",
+  "failed",
+  "expired",
+  "reverted",
+  "reorged",
+  "late_confirmed",
+  "manual_review",
+] as const;
+
+export type SettlementState = (typeof SETTLEMENT_STATES)[number];
+
+export type SettlementStatus = {
+  version: 1;
+  settlementJobId: string;
+  state: SettlementState;
+  confirmed: boolean;
+  finalized: boolean;
+};
 
 export type PaymentPayload = {
   x402Version: 2;
@@ -63,6 +94,8 @@ const MAX_SIGNATURE_BYTES = 512 * 1024;
 const DECIMAL = /^(?:0|[1-9][0-9]{0,77})$/;
 const CAIP2_NETWORK = /^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/;
 const PAYMENT_IDENTIFIER = /^[A-Za-z0-9_-]{16,128}$/;
+const SETTLEMENT_IDENTIFIER =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const BASE64 =
   /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const PRINTABLE_ASCII = /^[\x20-\x7e]+$/;
@@ -185,6 +218,54 @@ function requirement(value: unknown): PaymentRequirement {
 
 function optionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === "string";
+}
+
+export function settlementFlags(state: SettlementState): {
+  confirmed: boolean;
+  finalized: boolean;
+} {
+  return {
+    confirmed: state === "confirmed" || state === "finalized",
+    finalized: state === "finalized",
+  };
+}
+
+export function decodeSettlementStatusExtension(
+  extensions: JsonObject | undefined,
+): SettlementStatus | undefined {
+  const value = extensions?.[SETTLEMENT_STATUS_EXTENSION];
+  if (value === undefined) return undefined;
+  if (!isObject(value)) {
+    throw new Error("settlement-status extension is not an object");
+  }
+  const keys = [
+    "version",
+    "settlementJobId",
+    "state",
+    "confirmed",
+    "finalized",
+  ];
+  if (
+    Object.keys(value).sort().join(",") !== keys.sort().join(",") ||
+    value.version !== 1 ||
+    typeof value.settlementJobId !== "string" ||
+    !SETTLEMENT_IDENTIFIER.test(value.settlementJobId) ||
+    typeof value.state !== "string" ||
+    !SETTLEMENT_STATES.includes(value.state as SettlementState) ||
+    typeof value.confirmed !== "boolean" ||
+    typeof value.finalized !== "boolean"
+  ) {
+    throw new Error("settlement-status extension is malformed");
+  }
+  const state = value.state as SettlementState;
+  const expected = settlementFlags(state);
+  if (
+    value.confirmed !== expected.confirmed ||
+    value.finalized !== expected.finalized
+  ) {
+    throw new Error("settlement-status extension flags contradict its state");
+  }
+  return value as SettlementStatus;
 }
 
 function resource(value: unknown): PaymentRequired["resource"] {
@@ -495,5 +576,12 @@ export function decodePaymentResponseHeader(value: string): PaymentResponse {
   }
   if (parsed.extensions !== undefined) assertJsonValue(parsed.extensions);
   if (parsed.extra !== undefined) assertJsonValue(parsed.extra);
-  return parsed as PaymentResponse;
+  const response = parsed as PaymentResponse;
+  const settlement = decodeSettlementStatusExtension(response.extensions);
+  if (settlement !== undefined && response.success !== settlement.confirmed) {
+    throw new Error(
+      "PAYMENT-RESPONSE success contradicts settlement-status confirmation",
+    );
+  }
+  return response;
 }

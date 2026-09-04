@@ -498,4 +498,170 @@ describe("agent wallet CLI contract", () => {
     expect(output).not.toContain(artifact.paymentSignature);
     expect(output).not.toContain(paidBody);
   });
+
+  it("accepts confirmed 202, exposes status, and requires explicit reconciliation", async () => {
+    const state = await fixture();
+    const requestEnvelopePath = join(state.root, "confirmed-request.json");
+    const artifactPath = join(state.root, "confirmed-payment.json");
+    const paymentRequired: PaymentRequired = {
+      x402Version: 2,
+      resource: { url: "https://merchant.example/confirmed" },
+      accepts: [
+        {
+          scheme: "exact",
+          network: "eip155:8453",
+          amount: "100000",
+          asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          payTo: "0x1111111111111111111111111111111111111111",
+          maxTimeoutSeconds: 180,
+          extra: {
+            assetTransferMethod: "eip3009",
+            name: "USD Coin",
+            version: "2",
+            payloadProfile: "com.x402api.x402.base-usdc-eip3009-sponsored.v1",
+          },
+        },
+      ],
+    };
+    await writeFile(
+      requestEnvelopePath,
+      `${JSON.stringify({
+        version: 1,
+        method: "POST",
+        url: paymentRequired.resource.url,
+        contentType: "application/json",
+        bodyBase64: Buffer.from('{"sku":"server"}').toString("base64"),
+        paymentRequired: encodePaymentRequiredHeader(paymentRequired),
+        challengeDigest: `sha256:${"6".repeat(64)}`,
+      })}\n`,
+      { mode: 0o600 },
+    );
+    const loaded = await loadRequestEnvelope(requestEnvelopePath);
+    const store = new AttemptStore(
+      walletPaths(state.options.environment.X402API_HOME).attempts,
+    );
+    const { record, artifact } = await store.persistAuthorized({
+      requestDigest: loaded.requestDigest,
+      challengeDigest: loaded.envelope.challengeDigest,
+      selectedRequirementDigest: `sha256:${"7".repeat(64)}`,
+      buyerPaymentIdentifier: "buyer-payment-0002",
+      wallet: "buyer",
+      network: "eip155:8453",
+      payerAddress: "0x2222222222222222222222222222222222222222",
+      paymentSignature: Buffer.from('{"signed":true}').toString("base64"),
+      artifactPath,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const paymentId = "01a069c8-77b9-75c7-946b-1858db8b8249";
+    const paidBody = JSON.stringify({
+      status: "payment_confirmed",
+      paymentId,
+      transaction: "0xabc",
+      payment: {
+        state: "confirmed",
+        confirmed: true,
+        finalized: false,
+      },
+      fulfillment: { status: "waiting_for_finality" },
+    });
+    const seenSignatures: string[] = [];
+    const fetchImplementation = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        seenSignatures.push(
+          new Headers(init?.headers).get("PAYMENT-SIGNATURE")!,
+        );
+        return new Response(paidBody, {
+          status: 202,
+          headers: {
+            "Retry-After": "2",
+            "PAYMENT-RESPONSE": Buffer.from(
+              JSON.stringify({
+                success: true,
+                transaction: "0xabc",
+                network: "eip155:8453",
+                extensions: {
+                  "com.k1hub.settlement-status": {
+                    version: 1,
+                    settlementJobId: paymentId,
+                    state: "confirmed",
+                    confirmed: true,
+                    finalized: false,
+                  },
+                },
+              }),
+            ).toString("base64"),
+          },
+        });
+      },
+    );
+    vi.stubGlobal("fetch", fetchImplementation);
+
+    const submitArgs = [
+      "payment",
+      "submit",
+      "--attempt",
+      record.attemptId,
+      "--request-envelope",
+      requestEnvelopePath,
+      "--json",
+    ];
+    expect(await runCli(submitArgs, state.options)).toBe(0);
+    const submitted = JSON.parse(state.stdout.at(-1)!);
+    expect(submitted).toMatchObject({
+      state: "settled",
+      paymentId,
+      paymentState: "confirmed",
+      confirmed: true,
+      finalized: false,
+      fulfillmentPending: true,
+      retryAfterSeconds: 2,
+      transaction: "0xabc",
+      network: "eip155:8453",
+    });
+    expect(JSON.stringify(submitted)).not.toContain(paidBody);
+
+    expect(
+      await runCli(
+        ["payment", "status", "--attempt", record.attemptId, "--json"],
+        state.options,
+      ),
+    ).toBe(0);
+    expect(JSON.parse(state.stdout.at(-1)!)).toMatchObject({
+      state: "settled",
+      paymentId,
+      paymentState: "confirmed",
+      confirmed: true,
+      finalized: false,
+      transaction: "0xabc",
+      network: "eip155:8453",
+    });
+
+    expect(await runCli(submitArgs, state.options)).toBe(42);
+    expect(JSON.parse(state.stdout.at(-1)!)).toMatchObject({
+      error: {
+        code: "attempt_ambiguous",
+        details: { action: "reconcile_existing_attempt" },
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+
+    expect(
+      await runCli(
+        [
+          "payment",
+          "reconcile",
+          "--attempt",
+          record.attemptId,
+          "--request-envelope",
+          requestEnvelopePath,
+          "--json",
+        ],
+        state.options,
+      ),
+    ).toBe(0);
+    expect(seenSignatures).toEqual([
+      artifact.paymentSignature,
+      artifact.paymentSignature,
+    ]);
+  });
 });

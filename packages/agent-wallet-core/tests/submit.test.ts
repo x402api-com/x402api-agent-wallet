@@ -27,6 +27,28 @@ function paymentResponse(value: PaymentResponse): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64");
 }
 
+function confirmedPaymentResponse(options: {
+  paymentId: string;
+  state?: "confirmed" | "finalized" | "reorged" | "reverted";
+}): string {
+  const state = options.state ?? "confirmed";
+  const confirmed = state === "confirmed" || state === "finalized";
+  return paymentResponse({
+    success: confirmed,
+    transaction: "0xabc",
+    network: "eip155:8453",
+    extensions: {
+      "com.k1hub.settlement-status": {
+        version: 1,
+        settlementJobId: options.paymentId,
+        state,
+        confirmed,
+        finalized: state === "finalized",
+      },
+    },
+  });
+}
+
 async function fixture(expiresAt = "2026-08-22T20:05:00.000Z") {
   const root = await mkdtemp(join(tmpdir(), "x402api-submit-test-"));
   roots.push(root);
@@ -213,6 +235,129 @@ describe("exact paid request submission", () => {
         now: new Date("2026-08-22T20:01:03.000Z"),
       }),
     ).resolves.toMatchObject({ state: "fulfilled" });
+    expect(seenSignatures).toEqual([
+      state.artifact.paymentSignature,
+      state.artifact.paymentSignature,
+    ]);
+  });
+
+  it("accepts confirmed HTTP 202 and allows only exact reconciliation afterward", async () => {
+    const state = await fixture();
+    const paymentId = "01a069c8-77b9-75c7-946b-1858db8b8240";
+    const seenSignatures: string[] = [];
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(async (_url, init) => {
+        seenSignatures.push(
+          new Headers(init?.headers).get("PAYMENT-SIGNATURE")!,
+        );
+        return Response.json(
+          {
+            status: "payment_confirmed",
+            paymentId,
+            transaction: "0xabc",
+            payment: {
+              state: "confirmed",
+              confirmed: true,
+              finalized: false,
+            },
+            fulfillment: { status: "waiting_for_finality" },
+          },
+          {
+            status: 202,
+            headers: {
+              "PAYMENT-RESPONSE": confirmedPaymentResponse({ paymentId }),
+              "Retry-After": "2",
+            },
+          },
+        );
+      })
+      .mockImplementationOnce(async (_url, init) => {
+        seenSignatures.push(
+          new Headers(init?.headers).get("PAYMENT-SIGNATURE")!,
+        );
+        return Response.json(
+          {
+            status: "payment_settled",
+            paymentId,
+            transaction: "0xabc",
+            payment: {
+              state: "finalized",
+              confirmed: true,
+              finalized: true,
+            },
+            fulfillment: { status: "complete" },
+          },
+          {
+            status: 200,
+            headers: {
+              "PAYMENT-RESPONSE": confirmedPaymentResponse({
+                paymentId,
+                state: "finalized",
+              }),
+            },
+          },
+        );
+      });
+
+    await expect(
+      submitAuthorizedPayment({
+        attemptsDirectory: state.attemptsDirectory,
+        attemptId: state.record.attemptId,
+        requestEnvelopePath: state.requestEnvelopePath,
+        fetchImplementation,
+        now: new Date("2026-08-22T20:01:00.000Z"),
+      }),
+    ).resolves.toMatchObject({
+      state: "settled",
+      httpStatus: 202,
+      paymentId,
+      paymentState: "confirmed",
+      confirmed: true,
+      finalized: false,
+      fulfillmentPending: true,
+      retryAfterSeconds: 2,
+      transaction: "0xabc",
+      network: "eip155:8453",
+    });
+    expect(await state.store.get(state.record.attemptId)).toMatchObject({
+      state: "settled",
+      lastPaymentId: paymentId,
+    });
+    expect(await state.store.getSettlement(state.record.attemptId)).toMatchObject({
+      state: "confirmed",
+      confirmed: true,
+      finalized: false,
+    });
+
+    await expect(
+      submitAuthorizedPayment({
+        attemptsDirectory: state.attemptsDirectory,
+        attemptId: state.record.attemptId,
+        requestEnvelopePath: state.requestEnvelopePath,
+        fetchImplementation,
+      }),
+    ).rejects.toMatchObject({
+      code: "attempt_ambiguous",
+      details: { action: "reconcile_existing_attempt" },
+    });
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+
+    await expect(
+      submitAuthorizedPayment({
+        attemptsDirectory: state.attemptsDirectory,
+        attemptId: state.record.attemptId,
+        requestEnvelopePath: state.requestEnvelopePath,
+        fetchImplementation,
+        mode: "reconcile",
+      }),
+    ).resolves.toMatchObject({
+      state: "fulfilled",
+      paymentState: "finalized",
+      confirmed: true,
+      finalized: true,
+      fulfillmentPending: false,
+    });
     expect(seenSignatures).toEqual([
       state.artifact.paymentSignature,
       state.artifact.paymentSignature,
@@ -433,6 +578,7 @@ describe("exact paid request submission", () => {
         requestEnvelopePath: state.requestEnvelopePath,
         fetchImplementation,
         now: new Date("2026-08-22T20:01:00.000Z"),
+        mode: "reconcile",
       }),
     ).rejects.toMatchObject({
       code: "settlement_outcome_unknown",
@@ -452,12 +598,12 @@ describe("exact paid request submission", () => {
         attemptsDirectory: state.attemptsDirectory,
         attemptId: state.record.attemptId,
         requestEnvelopePath: state.requestEnvelopePath,
+        now: new Date("2026-08-22T20:01:00.000Z"),
         fetchImplementation: async () =>
           Response.json(
             { error: { code: "sponsorship_reservation_expired" } },
             { status: 402 },
           ),
-        now: new Date("2026-08-22T20:01:00.000Z"),
       }),
     ).rejects.toMatchObject({ code: "settlement_outcome_unknown" });
     expect((await state.store.get(state.record.attemptId)).state).toBe(
@@ -473,6 +619,7 @@ describe("exact paid request submission", () => {
         attemptsDirectory: state.attemptsDirectory,
         attemptId: state.record.attemptId,
         requestEnvelopePath: state.requestEnvelopePath,
+        now: new Date("2026-08-22T20:01:00.000Z"),
         fetchImplementation: async () =>
           Response.json(
             { error: { code: "fulfillment_lookup_unavailable" } },
@@ -487,7 +634,6 @@ describe("exact paid request submission", () => {
               },
             },
           ),
-        now: new Date("2026-08-22T20:01:00.000Z"),
       }),
     ).rejects.toMatchObject({
       code: "settlement_outcome_unknown",
@@ -495,6 +641,109 @@ describe("exact paid request submission", () => {
     });
     expect((await state.store.get(state.record.attemptId)).state).toBe(
       "settled",
+    );
+  });
+
+  it("preserves a confirmed payment reorg as nonretryable invalidation", async () => {
+    const state = await fixture();
+    const paymentId = "01a069c8-77b9-75c7-946b-1858db8b8241";
+    await state.store.recordSubmission({
+      attemptId: state.record.attemptId,
+      state: "settled",
+      httpStatus: 202,
+      responseBody: new Uint8Array(),
+      paymentId,
+      settlement: {
+        version: 1,
+        paymentId,
+        state: "confirmed",
+        confirmed: true,
+        finalized: false,
+        transaction: "0xabc",
+        network: "eip155:8453",
+      },
+    });
+
+    await expect(
+      submitAuthorizedPayment({
+        attemptsDirectory: state.attemptsDirectory,
+        attemptId: state.record.attemptId,
+        requestEnvelopePath: state.requestEnvelopePath,
+        mode: "reconcile",
+        fetchImplementation: async () =>
+          Response.json(
+            {
+              error: {
+                code: "settlement_reorged",
+                detail: { payment_id: paymentId, state: "reorged" },
+              },
+            },
+            {
+              status: 402,
+              headers: {
+                "PAYMENT-RESPONSE": confirmedPaymentResponse({
+                  paymentId,
+                  state: "reorged",
+                }),
+              },
+            },
+          ),
+      }),
+    ).rejects.toMatchObject({
+      code: "settlement_invalidated",
+      retryable: false,
+      details: {
+        paymentId,
+        paymentState: "reorged",
+        confirmed: false,
+        finalized: false,
+        action: "merchant_compensation_required",
+      },
+    });
+    expect(await state.store.getSettlement(state.record.attemptId)).toMatchObject({
+      state: "reorged",
+      confirmed: false,
+      finalized: false,
+    });
+    expect((await state.store.get(state.record.attemptId)).state).toBe(
+      "settled",
+    );
+  });
+
+  it("fails closed when confirmed response evidence contradicts the attempt", async () => {
+    const state = await fixture();
+    const paymentId = "01a069c8-77b9-75c7-946b-1858db8b8242";
+
+    await expect(
+      submitAuthorizedPayment({
+        attemptsDirectory: state.attemptsDirectory,
+        attemptId: state.record.attemptId,
+        requestEnvelopePath: state.requestEnvelopePath,
+        now: new Date("2026-08-22T20:01:00.000Z"),
+        fetchImplementation: async () =>
+          Response.json(
+            {
+              payment_id: paymentId,
+              state: "confirmed",
+              confirmed: true,
+              finalized: false,
+              transaction: "0xabc",
+              network: "eip155:137",
+            },
+            {
+              status: 200,
+              headers: {
+                "PAYMENT-RESPONSE": confirmedPaymentResponse({ paymentId }),
+              },
+            },
+          ),
+      }),
+    ).rejects.toMatchObject({
+      code: "request_binding_mismatch",
+      retryable: false,
+    });
+    expect((await state.store.get(state.record.attemptId)).state).toBe(
+      "pending",
     );
   });
 

@@ -5,6 +5,7 @@ import {
   createPaymentPayload,
   decodePaymentRequiredHeader,
   decodePaymentResponseHeader,
+  decodeSettlementStatusExtension,
   decodePaymentSignature,
   encodePaymentRequiredHeader,
   encodePaymentSignature,
@@ -187,6 +188,100 @@ describe("x402 HTTP codec", () => {
         ).toString("base64"),
       ),
     ).toThrow(/malformed/);
+  });
+
+  it("strictly decodes the versioned settlement-status extension", () => {
+    const extensions = {
+      "com.k1hub.settlement-status": {
+        version: 1,
+        settlementJobId: "01a069c8-77b9-75c7-946b-1858db8b8249",
+        state: "confirmed",
+        confirmed: true,
+        finalized: false,
+      },
+    };
+    expect(decodeSettlementStatusExtension(extensions)).toEqual(
+      extensions["com.k1hub.settlement-status"],
+    );
+    expect(
+      decodePaymentResponseHeader(
+        Buffer.from(
+          JSON.stringify({
+            success: true,
+            transaction: "0xabc",
+            network: "eip155:8453",
+            extensions,
+          }),
+        ).toString("base64"),
+      ),
+    ).toMatchObject({ success: true, extensions });
+  });
+
+  it.each([
+    {
+      label: "unknown version",
+      patch: { version: 2 },
+    },
+    {
+      label: "unknown state",
+      patch: { state: "accepted" },
+    },
+    {
+      label: "contradictory confirmation",
+      patch: { confirmed: false },
+    },
+    {
+      label: "finalized without final state",
+      patch: { finalized: true },
+    },
+    {
+      label: "unknown field",
+      patch: { extra: true },
+    },
+  ])("rejects malformed settlement status: $label", ({ patch }) => {
+    const status = {
+      version: 1,
+      settlementJobId: "01a069c8-77b9-75c7-946b-1858db8b8249",
+      state: "confirmed",
+      confirmed: true,
+      finalized: false,
+      ...patch,
+    };
+    expect(() =>
+      decodePaymentResponseHeader(
+        Buffer.from(
+          JSON.stringify({
+            success: true,
+            transaction: "0xabc",
+            network: "eip155:8453",
+            extensions: { "com.k1hub.settlement-status": status },
+          }),
+        ).toString("base64"),
+      ),
+    ).toThrow(/settlement-status/);
+  });
+
+  it("rejects PAYMENT-RESPONSE success that contradicts settlement status", () => {
+    expect(() =>
+      decodePaymentResponseHeader(
+        Buffer.from(
+          JSON.stringify({
+            success: false,
+            transaction: "0xabc",
+            network: "eip155:8453",
+            extensions: {
+              "com.k1hub.settlement-status": {
+                version: 1,
+                settlementJobId: "01a069c8-77b9-75c7-946b-1858db8b8249",
+                state: "confirmed",
+                confirmed: true,
+                finalized: false,
+              },
+            },
+          }),
+        ).toString("base64"),
+      ),
+    ).toThrow(/success contradicts/);
   });
 
   it("uses cross-runtime canonical sorted JSON", () => {

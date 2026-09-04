@@ -12,7 +12,7 @@ from the merchant tenant. A buyer does not need ETH or SOL. TRON wallet
 management remains available, but TRON payment authorization is coming soon
 and cannot be selected or used as a fallback.
 
-> **Release status:** `0.2.8` is the current source and npm release line.
+> **Release status:** `0.2.9` is the current source and npm release line.
 > Production mainnet support remains gated by the capped live evidence and
 > release review described in [SECURITY.md](SECURITY.md).
 
@@ -73,7 +73,7 @@ x402api wallet create \
 
 The value is canonical atomic units for the supported payment asset. It is a
 per-payment limit, not a daily or cumulative budget, merchant allowlist, or
-hosted policy. Version 0.2.8 has no policy-update command; the ceiling is set
+hosted policy. Version 0.2.9 has no policy-update command; the ceiling is set
 when the wallet is created. Owner-only directories (`0700`) and files (`0600`)
 protect stored material from accidental local exposure, but they do not make a
 compromised same-user host safe.
@@ -106,7 +106,7 @@ is the executable that holds keys, authorizes payments, and safely submits or
 reconciles an exact credential-free request.
 
 ```bash
-npm install --global @x402api/agent-wallet-cli@0.2.8
+npm install --global @x402api/agent-wallet-cli@0.2.9
 x402api skill install --output "$CODEX_HOME/skills/x402api-pay" --json
 ```
 
@@ -118,6 +118,27 @@ authorization and exact submission in one command. `payment authorize` and
 `payment submit` keep the two stages explicit for merchant-specific tools.
 Timeouts and asynchronous responses retain the same attempt and signature;
 they never create a replacement payment automatically.
+
+## Confirmed-first results
+
+Version 0.2.9 accepts every successful 2xx response, including HTTP `202`,
+when `PAYMENT-RESPONSE.success` is `true` and all available settlement evidence
+agrees. JSON output keeps `state` as the local attempt lifecycle and adds
+`paymentState`, `confirmed`, `finalized`, `fulfillmentPending`, `paymentId`,
+`transaction`, and `network`. A confirmed HTTP `202` exits successfully with
+local state `settled`; it means the payment is accepted while the merchant's
+result may still be pending.
+
+After confirmation, `payment submit` is blocked. If a credential-free merchant
+result is still pending, use `payment reconcile` with the same attempt and
+unchanged request envelope. Reconciliation reuses the exact stored signature;
+it never creates or authorizes another payment. A later `reorged` or `reverted`
+state returns the nonretryable `settlement_invalidated` error for merchant
+compensation.
+
+The wallet does not fetch x402api signed receipts. Payment and receipt status
+routes require a tenant credential, which remains owned by trusted merchant
+code such as WarpMetal and must not enter the buyer-wallet CLI.
 
 Merchant reconciliation metadata is outside the wallet contract. In
 particular, `X-X402API-Challenge-Handle` is intentionally excluded from the

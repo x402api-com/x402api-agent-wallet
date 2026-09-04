@@ -21,7 +21,7 @@ fixture, log, or support message.
 
 ## Supported versions
 
-Version 0.2.8 is the current source and npm release line. No version is yet
+Version 0.2.9 is the current source and npm release line. No version is yet
 production-supported for uncapped mainnet use. Production support remains
 gated on the release checklist and capped mainnet evidence in the
 implementation plan.
