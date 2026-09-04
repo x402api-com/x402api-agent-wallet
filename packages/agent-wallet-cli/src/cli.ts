@@ -35,6 +35,7 @@ import {
   walletPaths,
   type RpcConfiguration,
   type RefillReason,
+  type SettlementEvidence,
   type SupportedNetwork,
 } from "@x402api/agent-wallet-core";
 
@@ -201,6 +202,31 @@ function publicWallet(
     ...(metadata.retiredAt === undefined
       ? {}
       : { retiredAt: metadata.retiredAt }),
+  };
+}
+
+function publicSettlement(
+  record: Awaited<ReturnType<AttemptStore["get"]>>,
+  settlement: SettlementEvidence | null,
+) {
+  const acceptedWithoutSidecar =
+    settlement === null && ["settled", "fulfilled"].includes(record.state);
+  const paymentId = settlement?.paymentId ?? record.lastPaymentId;
+  const paymentState =
+    settlement?.state ?? (acceptedWithoutSidecar ? "confirmed" : undefined);
+  const confirmed =
+    settlement?.confirmed ?? (acceptedWithoutSidecar ? true : undefined);
+  const finalized =
+    settlement?.finalized ?? (acceptedWithoutSidecar ? false : undefined);
+  const transaction = settlement?.transaction;
+  const network = settlement?.network ?? record.network;
+  return {
+    ...(paymentId === undefined ? {} : { paymentId }),
+    ...(paymentState === undefined ? {} : { paymentState }),
+    ...(confirmed === undefined ? {} : { confirmed }),
+    ...(finalized === undefined ? {} : { finalized }),
+    ...(transaction === undefined ? {} : { transaction }),
+    ...(paymentState === undefined ? {} : { network }),
   };
 }
 
@@ -611,7 +637,13 @@ async function dispatch(
   }
   if (group === "payment" && action === "status") {
     rejectUnknown(parsed, ["attempt"]);
-    return new AttemptStore(paths.attempts).get(required(parsed, "attempt"));
+    const store = new AttemptStore(paths.attempts);
+    const attemptId = required(parsed, "attempt");
+    const record = await store.get(attemptId);
+    return {
+      ...record,
+      ...publicSettlement(record, await store.getSettlement(attemptId)),
+    };
   }
   if (group === "payment" && (action === "submit" || action === "reconcile")) {
     rejectUnknown(parsed, ["attempt", "request-envelope"]);
@@ -619,6 +651,7 @@ async function dispatch(
       attemptsDirectory: paths.attempts,
       attemptId: required(parsed, "attempt"),
       requestEnvelopePath: required(parsed, "request-envelope"),
+      mode: action,
     });
   }
   if (group === "payment" && action === "artifact") {

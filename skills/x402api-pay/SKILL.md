@@ -123,16 +123,31 @@ Distinguish these states:
 - settlement: the payment is authoritative on the chosen rail;
 - fulfillment: the merchant returned the purchased result.
 
-On timeout, `202`, process restart, or conflicting evidence, look up the
-existing attempt. Run `payment reconcile` with that attempt and the original
-request envelope, or use the merchant's authoritative status adapter. Reuse
-the exact artifact and buyer payment identifier. Never authorize the same
-request again merely because a submission result is unknown. Local abandonment
+Inspect the JSON result before deciding whether an HTTP `202` is ambiguous. A
+successful result with `confirmed: true` means the payment is accepted even
+when `finalized` is false and `fulfillmentPending` is true. Stop payment
+submission immediately. If the credential-free merchant result is still
+pending, run `payment reconcile` with that attempt and the original request
+envelope; do not call `payment submit` again. Reconciliation reuses the exact
+artifact and buyer payment identifier.
+
+On a timeout, process restart, HTTP `503`, or HTTP `202` without successful
+confirmation evidence, look up the existing attempt and reconcile it or use
+the merchant's authoritative status adapter. Never authorize the same request
+again merely because submission or fulfillment is unknown. Local abandonment
 does not revoke a signature or reverse settlement.
 
 When `payment status` includes `lastPaymentId`, preserve it as the merchant's
 durable reconciliation handle. It is public settlement metadata, not a new
 authorization, and it never permits replacing the existing artifact.
+
+Keep the output fields separate: `state` is the local attempt lifecycle,
+`paymentState` is the chain settlement state, and `confirmed`, `finalized`, and
+`fulfillmentPending` control downstream behavior. Treat
+`settlement_invalidated` as a nonretryable reorg/revert requiring merchant
+compensation or operator review. The buyer wallet does not call tenant-
+authenticated payment or receipt routes; trusted merchant code owns those
+credentials and attaches the final signed receipt asynchronously.
 
 Stop on unsupported profiles, changed request bytes, corrupt artifacts,
 expired challenges, unexpected recipients, or contradictory settlement data.

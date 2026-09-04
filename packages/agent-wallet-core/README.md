@@ -6,6 +6,12 @@ Solana payment authorization, balances, exact paid-request submission, and
 durable attempt and response-evidence records. TRON wallet/protocol primitives
 remain available, but the launch authorization orchestrator rejects TRON.
 
+Confirmed-first settlement evidence is decoded from the versioned
+`com.k1hub.settlement-status` extension and compatible response bodies. The
+core rejects contradictory payment IDs, states, flags, transactions, or
+networks; stores public evidence in a backward-compatible private sidecar; and
+separates initial submission from exact merchant-fulfillment reconciliation.
+
 Use the `@x402api/agent-wallet-cli` package for the supported command-line
 surface. This library deliberately exposes no arbitrary-signing API.
 

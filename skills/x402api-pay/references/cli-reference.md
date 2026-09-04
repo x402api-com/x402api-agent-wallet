@@ -41,7 +41,7 @@ x402api wallet sweep --wallet NAME --to ADDRESS --json
 `--maximum-payment-atomic` is an optional canonical decimal in atomic units for
 the wallet's supported payment asset. It is enforced on each authorization and
 returns `payment_limit_exceeded` when the exact amount is larger. It is not a
-daily or cumulative budget. Version 0.2.8 sets it only at wallet creation and
+daily or cumulative budget. Version 0.2.9 sets it only at wallet creation and
 does not provide a policy-update command.
 
 On a fresh host, `wallet setup` atomically creates one high-entropy managed
@@ -103,6 +103,37 @@ If the merchant returns a canonical x402api settlement UUID as `paymentId` or
 `payment_id`, `payment status` exposes it as `lastPaymentId`. HTTP `202`, `503`,
 timeout, or restart never clears that identifier or replaces the authorization.
 
+A successful paid-request result has this public shape in addition to private
+response evidence paths:
+
+```json
+{
+  "version": 1,
+  "attemptId": "<attempt UUID>",
+  "state": "settled",
+  "paymentState": "confirmed",
+  "confirmed": true,
+  "finalized": false,
+  "fulfillmentPending": true,
+  "retryAfterSeconds": 2,
+  "paymentId": "<settlement UUID>",
+  "transaction": "<chain transaction>",
+  "network": "eip155:8453"
+}
+```
+
+`state` remains the local attempt lifecycle. `paymentState` is the current
+chain settlement state. HTTP `202` plus `PAYMENT-RESPONSE.success: true` exits
+zero and uses local state `settled`; the payment is accepted while merchant
+fulfillment remains pending. A later ordinary `payment submit` is rejected.
+Use `payment reconcile` with the same attempt and unchanged envelope when the
+credential-free merchant result must be collected. HTTP `202` without
+successful confirmation evidence remains a retryable ambiguous outcome.
+
+The CLI has no payment-receipt command. The x402api payment and signed-receipt
+routes require tenant authentication and belong to trusted merchant code, not
+the buyer wallet.
+
 ## Stable error routing
 
 - `password_required`, `wallet_locked`: request operator unlock assistance;
@@ -131,6 +162,9 @@ timeout, or restart never clears that identifier or replaces the authorization.
   safely sponsored.
 - `settlement_outcome_unknown`: keep the exact attempt and request envelope;
   retry or reconcile them without creating a new authorization.
+- `settlement_invalidated`: the authoritative payment state is `reorged` or
+  `reverted`; do not retry or authorize another payment automatically. Invoke
+  merchant compensation or operator review.
 - `unsupported_network`, `unsupported_asset`, `unsupported_profile`,
   `request_binding_mismatch`: stop; never fall back.
 - `attempt_already_exists`, `attempt_ambiguous`: reuse and reconcile the named

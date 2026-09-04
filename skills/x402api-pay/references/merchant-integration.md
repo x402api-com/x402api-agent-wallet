@@ -82,6 +82,22 @@ the buyer payment identifier. Reuse the artifact for a safe exact retry. Never
 create a second authorization to resolve uncertainty. A settled attempt is
 never downgraded by a later transport or replay failure.
 
+HTTP `202` has two distinct meanings. When the CLI returns exit zero with
+`confirmed: true`, payment is accepted and `fulfillmentPending: true` means
+only the merchant result remains outstanding. Stop ordinary submission and use
+`payment reconcile` only if that credential-free result must be collected.
+When `PAYMENT-RESPONSE` is absent or unsuccessful, HTTP `202` remains an
+ambiguous exact-retry condition. In both cases the attempt and signature remain
+unchanged.
+
+Trusted merchant code may provision on `confirmed: true` using `paymentId` as
+its idempotency key, then poll x402api payment and receipt status with its own
+tenant credential. Receipt HTTP `202 pending_finality` is normal; the merchant
+attaches the verified signed receipt after the route returns HTTP `200`. The
+tenant credential and receipt request never enter this wallet CLI. A later
+`settlement_invalidated` result requires compensation or operator review and
+must not cause the wallet to authorize a replacement automatically.
+
 ## Hosted refill endpoint
 
 The shipped CLI client posts a signed envelope to

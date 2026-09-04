@@ -5,6 +5,12 @@ import {
 } from "../protocol/http.js";
 import { AttemptStore, type AttemptState } from "./attempt-store.js";
 import { loadRequestEnvelope } from "./contracts.js";
+import {
+  mergeSettlementEvidence,
+  settlementEvidenceFromResponse,
+  settlementInvalidated,
+  type SettlementEvidence,
+} from "./settlement-evidence.js";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const ERROR_CODE = /^[a-z][a-z0-9_]{0,127}$/;
@@ -32,8 +38,13 @@ export type SubmissionResult = {
   responseDigest: string;
   responseEvidencePath: string;
   responseBodyPath?: string;
-  transaction?: string;
-  network?: string;
+  paymentState: "confirmed" | "finalized";
+  confirmed: true;
+  finalized: boolean;
+  fulfillmentPending: boolean;
+  retryAfterSeconds?: number;
+  transaction: string;
+  network: string;
   paymentId?: string;
 };
 
@@ -100,45 +111,6 @@ function responseErrorCode(body: Uint8Array): string | undefined {
   }
 }
 
-function responsePaymentId(body: Uint8Array): string | undefined {
-  if (body.byteLength === 0) return undefined;
-  try {
-    const parsed = JSON.parse(
-      new TextDecoder("utf-8", { fatal: true }).decode(body),
-    ) as unknown;
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
-      return undefined;
-    const document = parsed as Record<string, unknown>;
-    const error = document.error;
-    const detail =
-      typeof error === "object" && error !== null && !Array.isArray(error)
-        ? (error as Record<string, unknown>).detail
-        : undefined;
-    const structuredDetail =
-      typeof detail === "object" && detail !== null && !Array.isArray(detail)
-        ? (detail as Record<string, unknown>)
-        : undefined;
-    const candidates = [
-      document.paymentId,
-      document.payment_id,
-      structuredDetail?.paymentId,
-      structuredDetail?.payment_id,
-    ].filter((value): value is string => typeof value === "string");
-    const unique = [...new Set(candidates)];
-    if (
-      unique.length !== 1 ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
-        unique[0]!,
-      )
-    ) {
-      return undefined;
-    }
-    return unique[0];
-  } catch {
-    return undefined;
-  }
-}
-
 function retryAfterSeconds(response: Response): number | undefined {
   const value = response.headers.get("retry-after");
   if (value === null || !/^(?:0|[1-9][0-9]{0,5})$/.test(value))
@@ -164,6 +136,7 @@ export async function submitAuthorizedPayment(options: {
   fetchImplementation?: typeof fetch;
   now?: Date;
   timeoutMilliseconds?: number;
+  mode?: "submit" | "reconcile";
 }): Promise<SubmissionResult> {
   const store = new AttemptStore(options.attemptsDirectory);
   const snapshot = await store.get(options.attemptId);
@@ -190,7 +163,10 @@ export async function submitAuthorizedPayment(options: {
       "payment submission timeout must be between 1000 and 60000 milliseconds",
     );
   }
-  const submission = await store.beginSubmission(snapshot.attemptId);
+  const submission = await store.beginSubmission(
+    snapshot.attemptId,
+    options.mode ?? "submit",
+  );
   const record = submission.record;
   try {
     if (
@@ -280,25 +256,56 @@ export async function submitAuthorizedPayment(options: {
     }
     const errorCode =
       paymentResponse?.errorReason ?? responseErrorCode(responseBody);
-    const paymentId = responsePaymentId(responseBody);
-    if (
-      paymentId !== undefined &&
-      record.lastPaymentId !== undefined &&
-      paymentId !== record.lastPaymentId
-    ) {
-      await store.updateState(record.attemptId, ambiguousState);
+    let settlement: SettlementEvidence;
+    try {
+      const observed = settlementEvidenceFromResponse({
+        ...(paymentResponse === undefined ? {} : { paymentResponse }),
+        responseBody,
+        attemptNetwork: record.network,
+      });
+      settlement = mergeSettlementEvidence(
+        (await store.getSettlement(record.attemptId)) ?? undefined,
+        observed,
+      );
+      if (
+        settlement.paymentId !== undefined &&
+        record.lastPaymentId !== undefined &&
+        settlement.paymentId !== record.lastPaymentId
+      ) {
+        throw new Error(
+          "merchant changed the durable payment ID for an exact payment retry",
+        );
+      }
+    } catch (error) {
+      const updated = await store.recordSubmission({
+        attemptId: record.attemptId,
+        state: ambiguousState,
+        httpStatus: response.status,
+        responseBody,
+        ...(encodedPaymentResponse === undefined
+          ? {}
+          : { paymentResponse: encodedPaymentResponse }),
+        errorCode: "request_binding_mismatch",
+        ...(record.lastPaymentId === undefined
+          ? {}
+          : { paymentId: record.lastPaymentId }),
+      });
       throw new AgentWalletError(
         "request_binding_mismatch",
-        "merchant changed the durable payment ID for an exact payment retry",
+        "merchant returned contradictory settlement evidence",
         {
           details: {
             attemptId: record.attemptId,
+            responseEvidencePath: updated.lastResponseEvidencePath,
             paymentId: record.lastPaymentId,
             action: "reconcile_existing_attempt",
           },
+          cause: error,
         },
       );
     }
+    const hasSettlement = Object.keys(settlement).length > 1;
+    const paymentId = settlement.paymentId;
     const common = {
       attemptId: record.attemptId,
       httpStatus: response.status,
@@ -308,34 +315,51 @@ export async function submitAuthorizedPayment(options: {
         : { paymentResponse: encodedPaymentResponse }),
       ...(errorCode === undefined ? {} : { errorCode }),
       ...(paymentId === undefined ? {} : { paymentId }),
+      ...(hasSettlement ? { settlement } : {}),
     };
 
     if (
       response.status >= 200 &&
       response.status < 300 &&
-      response.status !== 202 &&
       paymentResponse?.success === true
     ) {
+      if (
+        settlement.confirmed !== true ||
+        (settlement.state !== "confirmed" && settlement.state !== "finalized") ||
+        settlement.transaction === undefined ||
+        settlement.network === undefined
+      ) {
+        throw new AgentWalletError(
+          "request_binding_mismatch",
+          "successful payment response has incomplete confirmation evidence",
+        );
+      }
+      const fulfillmentPending = response.status === 202;
+      const attemptState = fulfillmentPending ? "settled" : "fulfilled";
       const updated = await store.recordSubmission({
         ...common,
-        state: "fulfilled",
+        state: attemptState,
       });
+      const retryAfter = retryAfterSeconds(response);
       return {
         version: 1,
         attemptId: record.attemptId,
-        state: "fulfilled",
+        state: attemptState,
         httpStatus: response.status,
         responseDigest: updated.lastResponseDigest!,
         responseEvidencePath: updated.lastResponseEvidencePath!,
         ...(updated.lastResponseBodyPath === undefined
           ? {}
           : { responseBodyPath: updated.lastResponseBodyPath }),
-        ...(paymentResponse.transaction.length === 0
-          ? {}
-          : { transaction: paymentResponse.transaction }),
-        ...(paymentResponse.network.length === 0
-          ? {}
-          : { network: paymentResponse.network }),
+        paymentState: settlement.state,
+        confirmed: true,
+        finalized: settlement.finalized === true,
+        fulfillmentPending,
+        ...(fulfillmentPending && retryAfter !== undefined
+          ? { retryAfterSeconds: retryAfter }
+          : {}),
+        transaction: settlement.transaction,
+        network: settlement.network,
         ...(updated.lastPaymentId === undefined
           ? {}
           : { paymentId: updated.lastPaymentId }),
@@ -359,6 +383,37 @@ export async function submitAuthorizedPayment(options: {
             responseBodyPath: updated.lastResponseBodyPath,
             action: "reconcile_existing_attempt",
             paymentId: updated.lastPaymentId,
+            paymentState: settlement.state,
+            confirmed: settlement.confirmed,
+            finalized: settlement.finalized,
+            transaction: settlement.transaction,
+            network: settlement.network,
+          },
+        },
+      );
+    }
+
+    if (settlementInvalidated(settlement)) {
+      const updated = await store.recordSubmission({
+        ...common,
+        state: "settled",
+      });
+      throw new AgentWalletError(
+        "settlement_invalidated",
+        `confirmed payment was ${settlement.state}`,
+        {
+          details: {
+            attemptId: record.attemptId,
+            httpStatus: response.status,
+            responseEvidencePath: updated.lastResponseEvidencePath,
+            responseBodyPath: updated.lastResponseBodyPath,
+            action: "merchant_compensation_required",
+            paymentId: updated.lastPaymentId,
+            paymentState: settlement.state,
+            confirmed: false,
+            finalized: false,
+            transaction: settlement.transaction,
+            network: settlement.network,
           },
         },
       );
@@ -457,6 +512,9 @@ export async function submitAuthorizedPayment(options: {
           retryAfterSeconds: retryAfterSeconds(response),
           action: "retry_exact_payment_request",
           paymentId: updated.lastPaymentId,
+          paymentState: settlement.state,
+          confirmed: settlement.confirmed,
+          finalized: settlement.finalized,
         },
       },
     );

@@ -112,12 +112,17 @@ try {
   ) {
     throw new Error("installed CLI is missing sponsored payment submission");
   }
+  if (help.commands.some((command) => command.includes("receipt"))) {
+    throw new Error(
+      "buyer CLI must not expose tenant-authenticated receipt commands",
+    );
+  }
   execFileSync(
     process.execPath,
     [
       "--input-type=module",
       "--eval",
-      'const wallet = await import("@x402api/agent-wallet-core"); if (typeof wallet.submitAuthorizedPayment !== "function") process.exit(1);',
+      'const wallet = await import("@x402api/agent-wallet-core"); if (typeof wallet.submitAuthorizedPayment !== "function" || typeof wallet.settlementEvidenceFromResponse !== "function" || wallet.SETTLEMENT_STATUS_EXTENSION !== "com.k1hub.settlement-status") process.exit(1);',
     ],
     { cwd: consumer, stdio: "pipe" },
   );

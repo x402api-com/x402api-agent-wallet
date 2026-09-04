@@ -1,8 +1,11 @@
 # x402api Agent Wallet CLI and Skill Plan
 
 **Status:** Historical design record with earlier implementation snapshots;
-0.2.8 preserves durable merchant payment IDs across ambiguous exact retries
-and rejects locally derived challenge digests before signing;
+0.2.9 accepts strictly consistent confirmed-first payment results, separates
+payment acceptance from merchant fulfillment, and gates post-confirmation
+replay behind explicit exact reconciliation; 0.2.8 preserves durable merchant
+payment IDs across ambiguous exact retries and rejects locally derived challenge
+digests before signing;
 0.2.6 fixed Base USDC ABI balance decoding; 0.2.5 added managed local unlock
 setup and structured funding guidance while production mainnet support remains
 release-gated
@@ -20,6 +23,26 @@ merchant integration contract
 
 **Implementation baseline:** public agent-wallet protocol code extracted from
 the private hosted-platform packages listed in `source-provenance.md`
+
+## 0.2.9 confirmed-first amendment
+
+- Every 2xx response, including HTTP `202`, is a successful submitted payment
+  when `PAYMENT-RESPONSE.success` is true and all available settlement evidence
+  agrees. HTTP `202` still means merchant fulfillment may be pending.
+- Public output preserves local attempt `state` and adds `paymentState`,
+  `confirmed`, `finalized`, `fulfillmentPending`, transaction, network, and the
+  durable payment ID when supplied.
+- `payment submit` cannot replay an accepted payment. `payment reconcile` may
+  replay only the exact persisted request and signature to collect pending
+  credential-free merchant output.
+- The versioned `com.k1hub.settlement-status` extension and recognized body
+  evidence fail closed on malformed fields or contradictions. Confirmation may
+  advance to finalization or explicit reorg/revert invalidation, but not regress
+  to an ordinary pending state.
+- New settlement evidence is an owner-only sidecar. The exact version-1 attempt
+  record is unchanged so a 0.2.8 rollback can still read it.
+- Tenant-authenticated payment and receipt polling remains merchant-owned. No
+  tenant credential or receipt command enters the buyer-wallet boundary.
 
 ## 0.2.5 onboarding amendment
 

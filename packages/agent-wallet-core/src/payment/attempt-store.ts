@@ -9,6 +9,12 @@ import {
   readPrivateFile,
 } from "../storage/private-files.js";
 import { digestBytes, type PaymentArtifact } from "./contracts.js";
+import {
+  mergeSettlementEvidence,
+  parseStoredSettlementEvidence,
+  type SettlementEvidence,
+  type StoredSettlementEvidence,
+} from "./settlement-evidence.js";
 
 export type AttemptState =
   | "authorized"
@@ -196,6 +202,7 @@ export class AttemptStore {
   readonly indexes: string;
   readonly locks: string;
   readonly responses: string;
+  readonly settlements: string;
 
   constructor(root: string) {
     this.root = resolve(root);
@@ -203,6 +210,7 @@ export class AttemptStore {
     this.indexes = join(this.root, "request-index");
     this.locks = join(this.root, "locks");
     this.responses = join(this.root, "responses");
+    this.settlements = join(this.root, "settlements");
   }
 
   async initialize(): Promise<void> {
@@ -211,6 +219,7 @@ export class AttemptStore {
       ensurePrivateDirectory(this.indexes),
       ensurePrivateDirectory(this.locks),
       ensurePrivateDirectory(this.responses),
+      ensurePrivateDirectory(this.settlements),
     ]);
   }
 
@@ -454,14 +463,69 @@ export class AttemptStore {
     return updated;
   }
 
-  async beginSubmission(attemptId: string): Promise<{
+  async getSettlement(
+    attemptId: string,
+  ): Promise<StoredSettlementEvidence | null> {
+    await this.get(attemptId);
+    try {
+      return parseStoredSettlementEvidence(
+        JSON.parse(
+          (
+            await readPrivateFile(join(this.settlements, `${attemptId}.json`))
+          ).toString("utf8"),
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof AgentWalletError &&
+        error.code === "wallet_not_found"
+      ) {
+        return null;
+      }
+      throw new AgentWalletError(
+        "payment_artifact_corrupt",
+        "settlement evidence sidecar failed validation",
+        { cause: error },
+      );
+    }
+  }
+
+  async beginSubmission(
+    attemptId: string,
+    mode: "submit" | "reconcile" = "submit",
+  ): Promise<{
     record: AttemptRecord;
     release: () => Promise<void>;
   }> {
+    if (mode !== "submit" && mode !== "reconcile") {
+      throw new AgentWalletError(
+        "invalid_input",
+        "payment submission mode must be submit or reconcile",
+      );
+    }
     const snapshot = await this.get(attemptId);
     const release = await this.acquire(snapshot.requestDigest);
     try {
-      const record = await this.get(attemptId);
+      let record = await this.get(attemptId);
+      const settlement = await this.getSettlement(attemptId);
+      if (settlement?.state === "reverted" || settlement?.state === "reorged") {
+        throw new AgentWalletError(
+          "settlement_invalidated",
+          `confirmed payment was ${settlement.state}`,
+          {
+            details: {
+              attemptId,
+              action: "merchant_compensation_required",
+              paymentId: settlement.paymentId,
+              paymentState: settlement.state,
+              confirmed: false,
+              finalized: false,
+              transaction: settlement.transaction,
+              network: settlement.network,
+            },
+          },
+        );
+      }
       if (
         ["fulfilled", "terminal_failed", "abandoned_local"].includes(
           record.state,
@@ -472,7 +536,24 @@ export class AttemptStore {
           `cannot submit an attempt in ${record.state}`,
         );
       }
-      if (record.state !== "settled") {
+      if (
+        mode === "submit" &&
+        (record.state === "settled" || settlement?.confirmed === true)
+      ) {
+        throw new AgentWalletError(
+          "attempt_ambiguous",
+          "payment is already confirmed; use payment reconcile for exact fulfillment recovery",
+          {
+            details: {
+              attemptId,
+              action: "reconcile_existing_attempt",
+            },
+          },
+        );
+      }
+      if (settlement?.confirmed === true && record.state !== "settled") {
+        record = await this.updateState(attemptId, "settled");
+      } else if (record.state !== "settled") {
         await this.updateState(attemptId, "submitting");
       }
       return { record, release };
@@ -487,6 +568,31 @@ export class AttemptStore {
     const release = await this.acquire(snapshot.requestDigest);
     try {
       const current = await this.get(attemptId);
+      const settlement = await this.getSettlement(attemptId);
+      if (settlement?.state === "reverted" || settlement?.state === "reorged") {
+        throw new AgentWalletError(
+          "settlement_invalidated",
+          `confirmed payment was ${settlement.state}`,
+          {
+            details: {
+              attemptId,
+              action: "merchant_compensation_required",
+            },
+          },
+        );
+      }
+      if (settlement?.confirmed === true) {
+        throw new AgentWalletError(
+          "attempt_ambiguous",
+          "cannot abandon an already confirmed payment",
+          {
+            details: {
+              attemptId,
+              action: "reconcile_existing_attempt",
+            },
+          },
+        );
+      }
       if (["settled", "fulfilled", "terminal_failed"].includes(current.state)) {
         throw new AgentWalletError(
           "invalid_input",
@@ -510,6 +616,7 @@ export class AttemptStore {
     paymentResponse?: string;
     errorCode?: string;
     paymentId?: string;
+    settlement?: SettlementEvidence;
   }): Promise<AttemptRecord> {
     if (
       !Number.isSafeInteger(options.httpStatus) ||
@@ -539,6 +646,41 @@ export class AttemptStore {
       );
     }
     const responseId = randomUUID();
+    let storedSettlement = await this.getSettlement(options.attemptId);
+    try {
+      if (options.settlement !== undefined) {
+        const merged = mergeSettlementEvidence(
+          storedSettlement ?? undefined,
+          options.settlement,
+        );
+        storedSettlement = {
+          ...merged,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      const paymentIds = [
+        current.lastPaymentId,
+        options.paymentId,
+        storedSettlement?.paymentId,
+      ].filter((value): value is string => value !== undefined);
+      if (new Set(paymentIds).size > 1) {
+        throw new Error("payment ID contradicts the exact payment attempt");
+      }
+      if (
+        storedSettlement?.network !== undefined &&
+        storedSettlement.network !== current.network
+      ) {
+        throw new Error("settlement network contradicts the payment attempt");
+      }
+    } catch (error) {
+      throw new AgentWalletError(
+        "request_binding_mismatch",
+        "settlement evidence changed across an exact payment retry",
+        { cause: error },
+      );
+    }
+    const durablePaymentId =
+      options.paymentId ?? storedSettlement?.paymentId ?? current.lastPaymentId;
     const responseDigest = digestBytes(options.responseBody);
     const responseBodyPath =
       options.responseBody.byteLength === 0
@@ -569,12 +711,20 @@ export class AttemptStore {
           paymentResponseDigest: paymentResponseDigest ?? null,
           errorCode: options.errorCode ?? null,
           paymentId: options.paymentId ?? null,
+          settlement: options.settlement ?? null,
           state: options.state,
         },
         null,
         2,
       )}\n`,
     );
+    if (options.settlement !== undefined && storedSettlement !== null) {
+      await atomicWritePrivate(
+        join(this.settlements, `${options.attemptId}.json`),
+        `${JSON.stringify(storedSettlement, null, 2)}\n`,
+        { overwrite: true },
+      );
+    }
     const updated: AttemptRecord = {
       ...current,
       state: options.state,
@@ -595,8 +745,8 @@ export class AttemptStore {
     if (options.errorCode !== undefined) {
       updated.lastErrorCode = options.errorCode;
     }
-    if (options.paymentId !== undefined) {
-      updated.lastPaymentId = options.paymentId;
+    if (durablePaymentId !== undefined) {
+      updated.lastPaymentId = durablePaymentId;
     }
     await atomicWritePrivate(
       join(this.records, `${options.attemptId}.json`),

@@ -115,6 +115,7 @@ const expectedWireLiterals = [
   "com.k1hub.x402.solana-buyer-funded.v1",
   "com.k1hub.x402.tron-exact.v1",
   "com.k1hub.external-recipient",
+  "com.k1hub.settlement-status",
   "com.x402api.gas-sponsorship",
   "com.x402api.x402.base-usdc-eip3009-sponsored.v1",
   "com.x402api.x402.solana-sponsored.v1",
